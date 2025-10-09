@@ -3,6 +3,8 @@
 
 (() => {
   const baseUrl = window.location.href;
+  const capturedAt = new Date().toISOString();
+  const title = document.title ? document.title.trim() : "";
   console.info("[WashArticles] 内容脚本已注入：", baseUrl);
 
   const extractor = window.WashArticlesExtractor;
@@ -16,12 +18,12 @@
     console.info("[WashArticles] 提取结果：", content);
     window.dispatchEvent(
       new CustomEvent("wash-articles:content-ready", {
-        detail: { sourceUrl: baseUrl, items: content },
+        detail: { sourceUrl: baseUrl, items: content, capturedAt, title },
       }),
     );
     chrome.runtime.sendMessage({
       type: "wash-articles/content",
-      payload: { sourceUrl: baseUrl, items: content },
+      payload: { sourceUrl: baseUrl, items: content, capturedAt, title },
     });
   } catch (error) {
     console.error("[WashArticles] 提取失败：", error);

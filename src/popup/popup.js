@@ -1,34 +1,29 @@
 const sourceUrlEl = document.getElementById("source-url");
+const captureTimeEl = document.getElementById("capture-time");
 const summaryListEl = document.getElementById("summary-list");
 const summaryEmptyEl = document.getElementById("summary-empty");
 const imagesGridEl = document.getElementById("images-grid");
 const imagesEmptyEl = document.getElementById("images-empty");
+const historyListEl = document.getElementById("history-list");
+const historyEmptyEl = document.getElementById("history-empty");
+const historyClearBtn = document.getElementById("history-clear");
 
 let lastSourceUrl = null;
+let historyEntries = [];
 
-function renderSummary(items) {
+function renderSummary(items, counts) {
   summaryListEl.innerHTML = "";
-  if (!items || !items.length) {
+  const stats = counts || computeCounts(items);
+  if (!stats.paragraphs && !stats.headings && !stats.images) {
     summaryEmptyEl.style.display = "block";
     return;
   }
   summaryEmptyEl.style.display = "none";
-  const counts = items.reduce(
-    (acc, item) => {
-      if (!item || typeof item !== "object") return acc;
-      if (item.kind === "paragraph") acc.paragraphs += 1;
-      else if (item.kind === "image") acc.images += 1;
-      else if (item.kind === "heading") acc.headings += 1;
-      return acc;
-    },
-    { paragraphs: 0, images: 0, headings: 0 },
-  );
-  const fragments = [
-    `段落：${counts.paragraphs}`,
-    `小标题：${counts.headings}`,
-    `图片：${counts.images}`,
-  ];
-  fragments.forEach((text) => {
+  [
+    `段落：${stats.paragraphs}`,
+    `小标题：${stats.headings}`,
+    `图片：${stats.images}`,
+  ].forEach((text) => {
     const li = document.createElement("li");
     li.textContent = text;
     summaryListEl.appendChild(li);
@@ -59,8 +54,75 @@ function renderImages(images) {
   });
 }
 
+function renderHistory(entries) {
+  historyEntries = Array.isArray(entries) ? entries : [];
+  historyListEl.innerHTML = "";
+  if (!historyEntries.length) {
+    historyEmptyEl.style.display = "block";
+    return;
+  }
+  historyEmptyEl.style.display = "none";
+  historyEntries.forEach((entry, index) => {
+    const item = document.createElement("li");
+    item.className = "history-item";
+    item.dataset.index = index;
+
+    const title = document.createElement("strong");
+    title.textContent = entry.title || entry.sourceUrl || `记录 ${index + 1}`;
+    item.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    meta.textContent = `${formatDate(entry.capturedAt)} · 段落 ${entry.counts?.paragraphs ?? 0} / 图像 ${entry.counts?.images ?? 0}`;
+    item.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
+
+    const loadBtn = document.createElement("button");
+    loadBtn.dataset.action = "load";
+    loadBtn.className = "secondary";
+    loadBtn.textContent = "加载";
+    actions.appendChild(loadBtn);
+
+    const exportJsonBtn = document.createElement("button");
+    exportJsonBtn.dataset.action = "export-json";
+    exportJsonBtn.textContent = "导出 JSON";
+    actions.appendChild(exportJsonBtn);
+
+    const exportMdBtn = document.createElement("button");
+    exportMdBtn.dataset.action = "export-markdown";
+    exportMdBtn.textContent = "导出 Markdown";
+    actions.appendChild(exportMdBtn);
+
+    item.appendChild(actions);
+    historyListEl.appendChild(item);
+  });
+}
+
+function render(payload) {
+  if (!payload) {
+    sourceUrlEl.textContent = "暂无数据";
+    captureTimeEl.textContent = "";
+    summaryEmptyEl.style.display = "block";
+    renderImages([]);
+    return;
+  }
+  const sourceUrl = payload.sourceUrl ?? "未知来源";
+  const capturedAt = payload.capturedAt ?? null;
+  const counts = payload.counts ?? null;
+  sourceUrlEl.textContent = sourceUrl;
+  captureTimeEl.textContent = capturedAt ? `采集时间：${formatDate(capturedAt)}` : "";
+  renderSummary(payload.items ?? [], counts);
+  const cachedImages = payload.cachedImages || payload.images || [];
+  renderImages(cachedImages);
+  if (!cachedImages.length && sourceUrl && sourceUrl !== lastSourceUrl) {
+    requestImages(sourceUrl);
+  }
+  lastSourceUrl = sourceUrl;
+}
+
 function requestImages(sourceUrl) {
-  if (!sourceUrl) return;
   chrome.runtime.sendMessage(
     { type: "wash-articles/get-images", payload: { sourceUrl } },
     (response) => {
@@ -68,30 +130,80 @@ function requestImages(sourceUrl) {
         console.warn("获取图片缓存失败：", chrome.runtime.lastError.message);
         return;
       }
-      renderImages(response?.images ?? []);
+      if (sourceUrl === lastSourceUrl) {
+        renderImages(response?.images ?? []);
+      }
     },
   );
 }
 
-function render(payload) {
-  if (!payload) {
-    sourceUrlEl.textContent = "暂无数据";
-    renderSummary([]);
-    renderImages([]);
-    return;
-  }
-  const sourceUrl = payload.sourceUrl ?? "未知来源";
-  sourceUrlEl.textContent = sourceUrl;
-  renderSummary(payload.items ?? []);
-  if (payload.cachedImages) {
-    renderImages(payload.cachedImages);
-  } else {
-    renderImages([]);
-    if (sourceUrl && sourceUrl !== "未知来源" && sourceUrl !== lastSourceUrl) {
-      requestImages(sourceUrl);
+function requestHistory() {
+  chrome.runtime.sendMessage({ type: "wash-articles/get-history" }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.warn("获取历史记录失败：", chrome.runtime.lastError.message);
+      return;
     }
+    renderHistory(response?.history ?? []);
+  });
+}
+
+historyListEl.addEventListener("click", (event) => {
+  const action = event.target?.dataset?.action;
+  if (!action) return;
+  const item = event.target.closest("li[data-index]");
+  if (!item) return;
+  const index = Number(item.dataset.index);
+  const entry = historyEntries[index];
+  if (!entry) return;
+  if (action === "load") {
+    render({ ...entry, cachedImages: entry.images });
+  } else if (action === "export-json") {
+    requestExport(entry.sourceUrl, "json");
+  } else if (action === "export-markdown") {
+    requestExport(entry.sourceUrl, "markdown");
   }
-  lastSourceUrl = sourceUrl;
+});
+
+historyClearBtn.addEventListener("click", () => {
+  if (!confirm("确定要清空历史记录吗？")) return;
+  chrome.runtime.sendMessage({ type: "wash-articles/clear-history" }, () => {
+    if (chrome.runtime.lastError) {
+      alert(`清空失败：${chrome.runtime.lastError.message}`);
+      return;
+    }
+    renderHistory([]);
+  });
+});
+
+function requestExport(sourceUrl, format) {
+  chrome.runtime.sendMessage({ type: "wash-articles/export-entry", payload: { sourceUrl, format } }, (response) => {
+    if (chrome.runtime.lastError) {
+      alert(`导出失败：${chrome.runtime.lastError.message}`);
+      return;
+    }
+    if (!response?.ok) {
+      alert(`导出失败：${response?.error || "未知错误"}`);
+    }
+  });
+}
+
+function computeCounts(items) {
+  const counters = { paragraphs: 0, images: 0, headings: 0 };
+  if (!Array.isArray(items)) return counters;
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    if (item.kind === "paragraph") counters.paragraphs += 1;
+    else if (item.kind === "image") counters.images += 1;
+    else if (item.kind === "heading") counters.headings += 1;
+  }
+  return counters;
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => {
@@ -102,6 +214,8 @@ chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => 
   render(response?.payload ?? null);
 });
 
+requestHistory();
+
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "wash-articles/content-updated") {
     render(message.payload);
@@ -110,5 +224,8 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.payload?.sourceUrl === lastSourceUrl) {
       renderImages(message.payload.images ?? []);
     }
+  }
+  if (message?.type === "wash-articles/history-updated") {
+    renderHistory(message.history ?? []);
   }
 });

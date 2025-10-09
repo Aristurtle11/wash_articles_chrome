@@ -40,6 +40,23 @@
         text-align: center;
         color: #6b7280;
       }
+      button {
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+        background: #1a73e8;
+        color: #fff;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      button.secondary {
+        background: #e2e8f0;
+        color: #1f2933;
+      }
+      button.danger {
+        background: #dc2626;
+        color: #fff;
+      }
       .image-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
@@ -62,6 +79,31 @@
         border-radius: 6px;
         padding: 8px;
       }
+      .history-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .history-item {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .history-meta {
+        font-size: 12px;
+        color: #475569;
+      }
+      .history-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
     </style>
   </head>
   <body>
@@ -69,6 +111,7 @@
     <div class="section" id="source-section">
       <h2>来源链接</h2>
       <div id="source-url" class="placeholder">暂无数据</div>
+      <div id="capture-time" class="history-meta"></div>
     </div>
     <div class="section" id="summary-section">
       <h2>内容概览</h2>
@@ -79,6 +122,12 @@
       <h2>已缓存图片</h2>
       <div id="images-grid" class="image-grid"></div>
       <div id="images-empty" class="placeholder">尚未缓存图片</div>
+    </div>
+    <div class="section" id="history-section">
+      <h2>历史记录</h2>
+      <ul id="history-list" class="history-list"></ul>
+      <div id="history-empty" class="placeholder">暂无历史记录</div>
+      <button id="history-clear" class="danger" style="margin-top:8px;">清空历史</button>
     </div>
     <script type="module" src="./popup.js"></script>
   </body>
