@@ -10,6 +10,7 @@ const historyClearBtn = document.getElementById("history-clear");
 
 let lastSourceUrl = null;
 let historyEntries = [];
+const port = chrome.runtime.connect({ name: "wash-articles" });
 
 function renderSummary(items, counts) {
   summaryListEl.innerHTML = "";
@@ -206,17 +207,7 @@ function formatDate(value) {
   return date.toLocaleString();
 }
 
-chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => {
-  if (chrome.runtime.lastError) {
-    console.warn("获取页面内容失败：", chrome.runtime.lastError.message);
-    return;
-  }
-  render(response?.payload ?? null);
-});
-
-requestHistory();
-
-chrome.runtime.onMessage.addListener((message) => {
+function handleRuntimeMessage(message) {
   if (message?.type === "wash-articles/content-updated") {
     render(message.payload);
   }
@@ -228,4 +219,18 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "wash-articles/history-updated") {
     renderHistory(message.history ?? []);
   }
+}
+
+chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => {
+  if (chrome.runtime.lastError) {
+    console.warn("获取页面内容失败：", chrome.runtime.lastError.message);
+    return;
+  }
+  render(response?.payload ?? null);
 });
+
+requestHistory();
+
+chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+port.onMessage.addListener(handleRuntimeMessage);
+port.postMessage({ type: "wash-articles/request-state" });

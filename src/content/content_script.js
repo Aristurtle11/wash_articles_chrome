@@ -21,10 +21,17 @@
         detail: { sourceUrl: baseUrl, items: content, capturedAt, title },
       }),
     );
-    chrome.runtime.sendMessage({
-      type: "wash-articles/content",
-      payload: { sourceUrl: baseUrl, items: content, capturedAt, title },
-    });
+    chrome.runtime.sendMessage(
+      {
+        type: "wash-articles/content",
+        payload: { sourceUrl: baseUrl, items: content, capturedAt, title },
+      },
+      () => {
+        if (chrome.runtime.lastError) {
+          console.debug("[WashArticles] 内容同步消息未送达", chrome.runtime.lastError.message);
+        }
+      },
+    );
   } catch (error) {
     console.error("[WashArticles] 提取失败：", error);
   }

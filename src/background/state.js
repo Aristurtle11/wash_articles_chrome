@@ -25,6 +25,9 @@ export class ContentStore {
   clear(tabId) {
     if (!tabId) return;
     this._dataByTabId.delete(tabId);
+    if (this._lastTabId === tabId) {
+      this._lastTabId = this._dataByTabId.size ? [...this._dataByTabId.keys()].pop() ?? null : null;
+    }
   }
 
   update(tabId, updater) {
@@ -38,5 +41,24 @@ export class ContentStore {
         : updater;
     if (!next) return;
     this._dataByTabId.set(tabId, next);
+  }
+
+  latest() {
+    if (this._lastTabId && this._dataByTabId.has(this._lastTabId)) {
+      return this._dataByTabId.get(this._lastTabId) ?? null;
+    }
+    for (const value of this._dataByTabId.values()) {
+      if (value) {
+        return value;
+      }
+    }
+    return null;
+  }
+
+  entries() {
+    return Array.from(this._dataByTabId.entries()).map(([tabId, payload]) => ({
+      tabId,
+      payload,
+    }));
   }
 }

@@ -43,10 +43,20 @@
     });
     button.addEventListener("click", () => {
       if (!latestPayload) return;
-      chrome.runtime.sendMessage({
-        type: "wash-articles/open-popup",
-        payload: latestPayload,
-      });
+      chrome.runtime.sendMessage(
+        {
+          type: "wash-articles/open-popup",
+          payload: latestPayload,
+        },
+        () => {
+          if (chrome.runtime.lastError) {
+            console.debug(
+              "[WashArticles] 打开 Popup 消息未送达",
+              chrome.runtime.lastError.message,
+            );
+          }
+        },
+      );
     });
     document.body.appendChild(button);
     return button;

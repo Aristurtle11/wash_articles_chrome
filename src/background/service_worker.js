@@ -12,6 +12,7 @@ import {
 } from "./storage.js";
 
 const store = new ContentStore();
+const ports = new Set();
 
 function log(...args) {
   console.info("[WashArticles:SW]", ...args);
@@ -21,6 +22,41 @@ log("服务工作线程已加载：", new Date().toISOString());
 
 chrome.runtime.onInstalled.addListener((details) => {
   log("扩展安装/更新事件：", details);
+});
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "wash-articles") {
+    return;
+  }
+  ports.add(port);
+  log("前端视图连接：", port.sender?.documentId ?? port.sender?.id ?? "unknown");
+
+  const sendInitialState = async () => {
+    try {
+      const latest = store.latest();
+      if (latest) {
+        port.postMessage({ type: "wash-articles/content-updated", payload: latest });
+      }
+      const history = await loadHistory();
+      port.postMessage({ type: "wash-articles/history-updated", history });
+    } catch (error) {
+      log("同步初始状态失败：", error);
+    }
+  };
+
+  sendInitialState().catch((error) => log("初始化同步失败：", error));
+
+  port.onDisconnect.addListener(() => {
+    ports.delete(port);
+    log("前端视图断开连接");
+  });
+
+  port.onMessage.addListener((message) => {
+    if (!message || typeof message !== "object") return;
+    if (message.type === "wash-articles/request-state") {
+      sendInitialState().catch((error) => log("按需同步失败：", error));
+    }
+  });
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -70,7 +106,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
         if (message.payload) {
-          chrome.runtime.sendMessage({
+          void sendMessageSafely({
             type: "wash-articles/content-updated",
             payload: message.payload,
           });
@@ -368,12 +404,27 @@ function slugify(text) {
     .slice(0, 60) || "entry";
 }
 
+function broadcastToPorts(message) {
+  for (const port of Array.from(ports)) {
+    try {
+      port.postMessage(message);
+    } catch (error) {
+      ports.delete(port);
+      log("广播至视图失败，移除端口：", error);
+    }
+  }
+}
+
 function sendMessageSafely(message) {
+  broadcastToPorts(message);
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(message, () => {
       const error = chrome.runtime.lastError;
       if (error) {
-        log("发送消息失败（可忽略）", error.message);
+        const msg = String(error.message || "");
+        if (!msg.includes("The message port closed before a response was received.")) {
+          log("发送消息失败（可忽略）", msg);
+        }
       }
       resolve();
     });
