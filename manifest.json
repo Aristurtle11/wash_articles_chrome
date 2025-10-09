@@ -9,7 +9,9 @@
     "scripting",
     "storage"
   ],
-  "host_permissions": [],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "src/background/service_worker.js",
     "type": "module"

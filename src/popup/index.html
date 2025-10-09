@@ -40,6 +40,28 @@
         text-align: center;
         color: #6b7280;
       }
+      .image-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+        gap: 8px;
+      }
+      .image-grid img {
+        width: 100%;
+        height: 64px;
+        object-fit: cover;
+        border-radius: 6px;
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
+      }
+      .image-grid .image-error {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        background: #fee2e2;
+        color: #b91c1c;
+        border-radius: 6px;
+        padding: 8px;
+      }
     </style>
   </head>
   <body>
@@ -52,6 +74,11 @@
       <h2>内容概览</h2>
       <ul id="summary-list"></ul>
       <div id="summary-empty" class="placeholder">等待页面提取结果…</div>
+    </div>
+    <div class="section" id="images-section">
+      <h2>已缓存图片</h2>
+      <div id="images-grid" class="image-grid"></div>
+      <div id="images-empty" class="placeholder">尚未缓存图片</div>
     </div>
     <script type="module" src="./popup.js"></script>
   </body>

@@ -26,4 +26,17 @@ export class ContentStore {
     if (!tabId) return;
     this._dataByTabId.delete(tabId);
   }
+
+  update(tabId, updater) {
+    if (!tabId) return;
+    const current = this._dataByTabId.get(tabId) ?? null;
+    const next =
+      typeof updater === "function"
+        ? updater(current)
+        : current
+        ? { ...current, ...updater }
+        : updater;
+    if (!next) return;
+    this._dataByTabId.set(tabId, next);
+  }
 }
