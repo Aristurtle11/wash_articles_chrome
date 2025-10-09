@@ -19,6 +19,10 @@
         detail: { sourceUrl: baseUrl, items: content },
       }),
     );
+    chrome.runtime.sendMessage({
+      type: "wash-articles/content",
+      payload: { sourceUrl: baseUrl, items: content },
+    });
   } catch (error) {
     console.error("[WashArticles] 提取失败：", error);
   }
