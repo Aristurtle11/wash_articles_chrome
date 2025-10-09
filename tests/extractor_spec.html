@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Wash Articles 提取器测试</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 32px;
+        color: #1f2933;
+      }
+      h1 {
+        margin-bottom: 16px;
+        color: #1a73e8;
+      }
+      .result {
+        padding: 12px 16px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        background: #f1f5f9;
+      }
+      .result.pass {
+        border-left: 4px solid #16a34a;
+      }
+      .result.fail {
+        border-left: 4px solid #dc2626;
+        background: #fef2f2;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #0f172a;
+        color: #f8fafc;
+        padding: 12px;
+        border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Wash Articles 提取器测试</h1>
+    <div id="results"></div>
+
+    <script src="../src/content/extractor.js"></script>
+    <script>
+      const { extractArticleContent } = window.WashArticlesExtractor || {};
+      if (!extractArticleContent) {
+        document.getElementById("results").innerHTML = "<p class='result fail'>提取器未加载</p>";
+      } else {
+        runTests();
+      }
+
+      function runTests() {
+        const cases = [
+          testNextDataExtraction(),
+          testDomFallbackExtraction(),
+        ];
+
+        let passed = 0;
+        const container = document.getElementById("results");
+        cases.forEach((testCase) => {
+          const { name, actual, expected } = testCase;
+          const pass = deepEqual(actual, expected);
+          if (pass) passed += 1;
+          const box = document.createElement("div");
+          box.className = `result ${pass ? "pass" : "fail"}`;
+          box.innerHTML = `<strong>${name}</strong><br/>结果：${pass ? "通过" : "失败"}`;
+          if (!pass) {
+            box.innerHTML +=
+              `<div><em>期望</em></div><pre>${JSON.stringify(expected, null, 2)}</pre>` +
+              `<div><em>实际</em></div><pre>${JSON.stringify(actual, null, 2)}</pre>`;
+          }
+          container.appendChild(box);
+        });
+
+        const summary = document.createElement("p");
+        summary.textContent = `共 ${cases.length} 项测试，通过 ${passed} 项。`;
+        container.prepend(summary);
+        console.info("Wash Articles 提取器测试完成", { total: cases.length, passed });
+      }
+
+      function testNextDataExtraction() {
+        const baseUrl = "https://example.com/news/hero";
+        const doc = document.implementation.createHTMLDocument("NextData");
+        const script = doc.createElement("script");
+        script.id = "__NEXT_DATA__";
+        script.type = "application/json";
+        script.textContent = JSON.stringify(buildNextDataPayload());
+        doc.head.appendChild(script);
+        const items = extractArticleContent(doc, baseUrl);
+        return {
+          name: "__NEXT_DATA__ 解析",
+          actual: items,
+          expected: [
+            {
+              kind: "image",
+              sequence: 1,
+              url: "https://img.cdn/hero.jpg",
+              alt: "封面图片",
+              caption: "封面说明",
+              credit: "Photo Credit",
+            },
+            {
+              kind: "heading",
+              level: 2,
+              text: "主标题",
+            },
+            {
+              kind: "paragraph",
+              index: 1,
+              text: "第一段正文",
+            },
+            {
+              kind: "image",
+              sequence: 2,
+              url: "https://example.com/news/image-block.jpg",
+              alt: "插图",
+              caption: "图片描述",
+              credit: "Block Credit",
+            },
+          ],
+        };
+      }
+
+      function testDomFallbackExtraction() {
+        const baseUrl = "https://example.com/story";
+        const doc = document.implementation.createHTMLDocument("DomFallback");
+        doc.body.innerHTML = `
+          <article>
+            <h2 class="core-heading level-2">章节一</h2>
+            <p class="core-paragraph">段落 A</p>
+            <figure>
+              <img src="/images/photo.png" alt="图像" />
+              <figcaption>图像说明</figcaption>
+            </figure>
+            <div class="core-paragraph">段落 B</div>
+          </article>
+        `;
+        const items = extractArticleContent(doc, baseUrl);
+        return {
+          name: "DOM 结构解析",
+          actual: items,
+          expected: [
+            {
+              kind: "heading",
+              level: 2,
+              text: "章节一",
+            },
+            {
+              kind: "paragraph",
+              index: 1,
+              text: "段落 A",
+            },
+            {
+              kind: "image",
+              sequence: 1,
+              url: "https://example.com/images/photo.png",
+              alt: "图像",
+              caption: "图像说明",
+              credit: "",
+            },
+            {
+              kind: "paragraph",
+              index: 2,
+              text: "段落 B",
+            },
+          ],
+        };
+      }
+
+      function buildNextDataPayload() {
+        return {
+          props: {
+            pageProps: {
+              post: {
+                hideFeaturedImageOnArticlePage: false,
+                featuredImage: {
+                  node: {
+                    sourceUrl: "https://img.cdn/hero.jpg",
+                    altText: "封面图片",
+                    caption: "<p>封面说明</p>",
+                    imageCredit: "Photo Credit",
+                  },
+                },
+                editorBlocks: [
+                  {
+                    __typename: "CoreHeading",
+                    attributes: { content: "主标题", level: 2 },
+                  },
+                  {
+                    __typename: "CoreParagraph",
+                    renderedHtml: "<p>第一段正文</p>",
+                  },
+                  {
+                    __typename: "CoreImage",
+                    attributes: {
+                      src: "image-block.jpg",
+                      caption: "图片描述",
+                      alt: "插图",
+                    },
+                    imageCredit: "Block Credit",
+                  },
+                ],
+              },
+            },
+          },
+        };
+      }
+
+      function deepEqual(a, b) {
+        return JSON.stringify(a) === JSON.stringify(b);
+      }
+    </script>
+  </body>
+</html>
