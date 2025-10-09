@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Wash Articles 配置</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 24px auto;
+        max-width: 560px;
+        color: #1f2933;
+      }
+      h1 {
+        color: #1a73e8;
+        font-size: 24px;
+        margin-bottom: 12px;
+      }
+      p.note {
+        font-size: 13px;
+        color: #475569;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 16px;
+      }
+      label {
+        font-weight: 600;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      input {
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid #cbd5f5;
+        font-size: 14px;
+      }
+      input:focus {
+        border-color: #1a73e8;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.18);
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      button {
+        padding: 10px 16px;
+        border-radius: 6px;
+        border: none;
+        background: #1a73e8;
+        color: #fff;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #e2e8f0;
+        color: #1f2933;
+      }
+      .status {
+        font-size: 13px;
+        color: #15803d;
+      }
+      .error {
+        color: #dc2626;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Wash Articles 设置</h1>
+    <p class="note">
+      在此配置 Gemini API Key 和默认模型。扩展会将信息保存在浏览器账号的同步存储中，仅本地可见。
+    </p>
+
+    <form id="settings-form">
+      <label>
+        Gemini API Key
+        <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+      </label>
+      <label>
+        默认模型
+        <input id="model" type="text" value="gemini-2.5-flash" />
+      </label>
+      <div class="actions">
+        <button type="submit">保存</button>
+        <button type="button" id="clear" class="secondary">清除</button>
+        <span id="status" class="status"></span>
+      </div>
+    </form>
+
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

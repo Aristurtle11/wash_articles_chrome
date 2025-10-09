@@ -17,6 +17,7 @@
     "service_worker": "src/background/service_worker.js",
     "type": "module"
   },
+  "options_page": "src/options/index.html",
   "content_scripts": [
     {
       "matches": [
