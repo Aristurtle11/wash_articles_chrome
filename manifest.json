@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Wash Articles Extension",
+  "description": "在网页中提取正文与图片，为后续翻译和发布流程做准备。",
+  "version": "0.1.0",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "src/background/service_worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "src/content/content_script.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
