@@ -10,8 +10,17 @@ import {
   loadHistory,
   clearHistory,
 } from "./storage.js";
+import { TranslatorService } from "./translator.js";
+import {
+  SETTINGS_KEY,
+  DEFAULT_SETTINGS,
+  normalizeSettings,
+  maskApiKey,
+} from "../shared/settings.js";
 
 const store = new ContentStore();
+const translator = new TranslatorService();
+let currentSettings = { ...DEFAULT_SETTINGS };
 const ports = new Set();
 
 function log(...args) {
@@ -22,6 +31,18 @@ log("服务工作线程已加载：", new Date().toISOString());
 
 chrome.runtime.onInstalled.addListener((details) => {
   log("扩展安装/更新事件：", details);
+});
+
+initializeSettings().catch((error) => {
+  log("初始化设置失败：", error);
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "sync" || !changes[SETTINGS_KEY]) {
+    return;
+  }
+  const next = normalizeSettings(changes[SETTINGS_KEY].newValue);
+  updateSettings(next).catch((error) => log("同步设置失败：", error));
 });
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -39,6 +60,10 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       const history = await loadHistory();
       port.postMessage({ type: "wash-articles/history-updated", history });
+      port.postMessage({
+        type: "wash-articles/settings-updated",
+        settings: sanitizeSettings(currentSettings),
+      });
     } catch (error) {
       log("同步初始状态失败：", error);
     }
@@ -129,6 +154,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       })();
       return true;
+    case "wash-articles/get-settings":
+      sendResponse({ settings: sanitizeSettings(currentSettings) });
+      return false;
+    case "wash-articles/translate": {
+      const sourceUrl = message.payload?.sourceUrl || null;
+      const targetTabId =
+        tabId ?? findTabIdBySource(sourceUrl) ?? store.entries()[0]?.tabId ?? null;
+      if (!targetTabId) {
+        sendResponse({ ok: false, error: "无法识别标签" });
+        return false;
+      }
+      handleTranslateRequest(targetTabId)
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        });
+      return true;
+    }
     case "wash-articles/get-history":
       (async () => {
         const history = await loadHistory();
@@ -223,9 +266,7 @@ async function cacheImagesForPayload(tabId, payload) {
         : { ...payload, cachedImages: merged },
     );
 
-    const entry = buildHistoryEntry(payload, merged);
-    await appendHistory(entry);
-    await broadcastHistory();
+    await syncHistoryEntry(tabId);
 
     await sendMessageSafely({
       type: "wash-articles/images-cached",
@@ -236,10 +277,120 @@ async function cacheImagesForPayload(tabId, payload) {
   }
 }
 
+async function handleTranslateRequest(tabId) {
+  const current = store.get(tabId);
+  if (!current || !Array.isArray(current.items) || current.items.length === 0) {
+    throw new Error("请先提取正文内容");
+  }
+
+  store.update(tabId, (entry = {}) => ({
+    ...entry,
+    translation: {
+      ...(entry.translation ?? {}),
+      status: "working",
+      model: translator.settings.model,
+      updatedAt: new Date().toISOString(),
+      error: null,
+    },
+  }));
+  await emitTranslationUpdate(tabId);
+
+  try {
+    const result = await translator.translateContent(current.items, {
+      sourceUrl: current.sourceUrl,
+      title: current.title,
+    });
+
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      translation: {
+        status: "done",
+        text: result.text,
+        model: result.model,
+        updatedAt: result.updatedAt,
+        error: null,
+      },
+    }));
+
+    await syncHistoryEntry(tabId);
+    await emitTranslationUpdate(tabId);
+  } catch (error) {
+    const message = error?.message ?? String(error);
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      translation: {
+        ...(entry.translation ?? {}),
+        status: "error",
+        error: message,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+    await emitTranslationUpdate(tabId);
+    throw new Error(message);
+  }
+}
+
+async function syncHistoryEntry(tabId) {
+  const current = store.get(tabId);
+  if (!current?.sourceUrl) {
+    return;
+  }
+  const entry = buildHistoryEntry(current, current.cachedImages || []);
+  await appendHistory(entry);
+  await broadcastHistory();
+}
+
+async function emitTranslationUpdate(tabId) {
+  const current = store.get(tabId);
+  if (!current?.sourceUrl) {
+    return;
+  }
+  await sendMessageSafely({
+    type: "wash-articles/translation-updated",
+    payload: {
+      sourceUrl: current.sourceUrl,
+      translation: current.translation ?? null,
+    },
+  });
+}
+
+async function initializeSettings() {
+  try {
+    const result = await chrome.storage.sync.get(SETTINGS_KEY);
+    const settings = normalizeSettings(result[SETTINGS_KEY]);
+    await updateSettings(settings);
+  } catch (error) {
+    throw error;
+  }
+}
+
+async function updateSettings(settings) {
+  currentSettings = settings;
+  translator.updateSettings(settings);
+  await sendSettingsUpdate();
+}
+
+async function sendSettingsUpdate() {
+  const sanitized = sanitizeSettings(currentSettings);
+  await sendMessageSafely({ type: "wash-articles/settings-updated", settings: sanitized });
+}
+
 async function broadcastHistory() {
   const history = await loadHistory();
   await sendMessageSafely({ type: "wash-articles/history-updated", history });
   return history;
+}
+
+function findTabIdBySource(sourceUrl) {
+  if (!sourceUrl) {
+    return null;
+  }
+  for (const { tabId, payload } of store.entries()) {
+    if (payload?.sourceUrl === sourceUrl) {
+      return tabId;
+    }
+  }
+  return null;
 }
 
 async function exportEntry(sourceUrl, format) {
@@ -267,6 +418,15 @@ function buildHistoryEntry(payload, images) {
     counts,
     items: Array.isArray(payload?.items) ? payload.items : [],
     images: Array.isArray(images) ? images : [],
+    translation: payload?.translation
+      ? {
+          status: payload.translation.status,
+          text: payload.translation.text,
+          model: payload.translation.model,
+          updatedAt: payload.translation.updatedAt,
+          error: payload.translation.error ?? null,
+        }
+      : null,
   };
 }
 
@@ -429,4 +589,14 @@ function sendMessageSafely(message) {
       resolve();
     });
   });
+}
+
+function sanitizeSettings(settings) {
+  const normalized = normalizeSettings(settings);
+  return {
+    hasApiKey: Boolean(normalized.apiKey),
+    model: normalized.model,
+    updatedAt: normalized.updatedAt,
+    maskedKey: maskApiKey(normalized.apiKey),
+  };
 }

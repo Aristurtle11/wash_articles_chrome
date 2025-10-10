@@ -7,9 +7,15 @@ const imagesEmptyEl = document.getElementById("images-empty");
 const historyListEl = document.getElementById("history-list");
 const historyEmptyEl = document.getElementById("history-empty");
 const historyClearBtn = document.getElementById("history-clear");
+const translationStatusEl = document.getElementById("translation-status");
+const translationTextEl = document.getElementById("translation-text");
+const translateBtn = document.getElementById("translate-btn");
+const openSettingsBtn = document.getElementById("open-settings");
 
 let lastSourceUrl = null;
 let historyEntries = [];
+let translationState = null;
+let hasApiKey = false;
 const port = chrome.runtime.connect({ name: "wash-articles" });
 
 function renderSummary(items, counts) {
@@ -53,6 +59,45 @@ function renderImages(images) {
     thumb.title = img?.url || "";
     imagesGridEl.appendChild(thumb);
   });
+}
+
+function renderTranslation(translation) {
+  translationState = translation ?? null;
+  if (!translation) {
+    translationTextEl.value = "";
+    translationStatusEl.textContent = hasApiKey ? "尚未翻译" : "请先配置 API Key";
+    updateTranslateButton();
+    return;
+  }
+
+  if (translation.status === "working") {
+    translationStatusEl.textContent = "翻译中…";
+    translationTextEl.value = translation.text ?? translationTextEl.value ?? "";
+  } else if (translation.status === "error") {
+    translationStatusEl.textContent = `翻译失败：${translation.error || "未知错误"}`;
+    translationTextEl.value = translation.text ?? translationTextEl.value ?? "";
+  } else {
+    translationStatusEl.textContent = translation.updatedAt
+      ? `翻译完成：${formatDate(translation.updatedAt)}`
+      : "翻译完成";
+    translationTextEl.value = translation.text ?? "";
+  }
+
+  updateTranslateButton();
+}
+
+function updateTranslateButton() {
+  if (!translateBtn) return;
+  const isWorking = translationState?.status === "working";
+  if (isWorking) {
+    translateBtn.textContent = "翻译中…";
+  } else if (translationState?.status === "done" && translationState?.text) {
+    translateBtn.textContent = "重新翻译";
+  } else {
+    translateBtn.textContent = "开始翻译";
+  }
+  const hasSource = Boolean(lastSourceUrl && lastSourceUrl !== "未知来源");
+  translateBtn.disabled = isWorking || !hasApiKey || !hasSource;
 }
 
 function renderHistory(entries) {
@@ -107,12 +152,14 @@ function render(payload) {
     captureTimeEl.textContent = "";
     summaryEmptyEl.style.display = "block";
     renderImages([]);
+    lastSourceUrl = null;
+    renderTranslation(null);
     return;
   }
-  const sourceUrl = payload.sourceUrl ?? "未知来源";
+  const sourceUrl = payload.sourceUrl ?? "";
   const capturedAt = payload.capturedAt ?? null;
   const counts = payload.counts ?? null;
-  sourceUrlEl.textContent = sourceUrl;
+  sourceUrlEl.textContent = sourceUrl || "未知来源";
   captureTimeEl.textContent = capturedAt ? `采集时间：${formatDate(capturedAt)}` : "";
   renderSummary(payload.items ?? [], counts);
   const cachedImages = payload.cachedImages || payload.images || [];
@@ -121,6 +168,7 @@ function render(payload) {
     requestImages(sourceUrl);
   }
   lastSourceUrl = sourceUrl;
+  renderTranslation(payload.translation ?? null);
 }
 
 function requestImages(sourceUrl) {
@@ -146,6 +194,16 @@ function requestHistory() {
     }
     renderHistory(response?.history ?? []);
   });
+}
+
+function applySettings(settings) {
+  hasApiKey = Boolean(settings?.hasApiKey);
+  if (!hasApiKey) {
+    translationStatusEl.textContent = "请先配置 API Key";
+  } else if (!translationState) {
+    translationStatusEl.textContent = "尚未翻译";
+  }
+  updateTranslateButton();
 }
 
 historyListEl.addEventListener("click", (event) => {
@@ -174,6 +232,42 @@ historyClearBtn.addEventListener("click", () => {
     }
     renderHistory([]);
   });
+});
+
+translateBtn.addEventListener("click", () => {
+  if (!hasApiKey) {
+    if (confirm("尚未配置 API Key，是否前往设置？")) {
+      chrome.runtime.openOptionsPage();
+    }
+    return;
+  }
+  const hasSource = Boolean(lastSourceUrl && lastSourceUrl !== "未知来源");
+  if (!hasSource) {
+    alert("请先在页面中提取正文内容后再翻译。");
+    return;
+  }
+  translateBtn.disabled = true;
+  translationStatusEl.textContent = "翻译中…";
+  chrome.runtime.sendMessage(
+    { type: "wash-articles/translate", payload: { sourceUrl: lastSourceUrl } },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        translationStatusEl.textContent = `翻译请求失败：${chrome.runtime.lastError.message}`;
+        translationState = { status: "error", error: chrome.runtime.lastError.message };
+        updateTranslateButton();
+        return;
+      }
+      if (!response?.ok) {
+        translationStatusEl.textContent = `翻译失败：${response?.error || "未知错误"}`;
+        translationState = { status: "error", error: response?.error || "未知错误" };
+        updateTranslateButton();
+      }
+    },
+  );
+});
+
+openSettingsBtn.addEventListener("click", () => {
+  chrome.runtime.openOptionsPage();
 });
 
 function requestExport(sourceUrl, format) {
@@ -219,6 +313,15 @@ function handleRuntimeMessage(message) {
   if (message?.type === "wash-articles/history-updated") {
     renderHistory(message.history ?? []);
   }
+  if (message?.type === "wash-articles/translation-updated") {
+    if (!message.payload?.sourceUrl || message.payload.sourceUrl !== lastSourceUrl) {
+      return;
+    }
+    renderTranslation(message.payload.translation ?? null);
+  }
+  if (message?.type === "wash-articles/settings-updated") {
+    applySettings(message.settings ?? {});
+  }
 }
 
 chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => {
@@ -230,6 +333,14 @@ chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => 
 });
 
 requestHistory();
+
+chrome.runtime.sendMessage({ type: "wash-articles/get-settings" }, (response) => {
+  if (chrome.runtime.lastError) {
+    console.warn("获取设置失败：", chrome.runtime.lastError.message);
+    return;
+  }
+  applySettings(response?.settings ?? {});
+});
 
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 port.onMessage.addListener(handleRuntimeMessage);
