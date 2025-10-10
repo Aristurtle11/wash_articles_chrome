@@ -187,6 +187,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: true });
       })();
       return true;
+    case "wash-articles/download-formatted":
+      (async () => {
+        try {
+          const { sourceUrl, format } = message.payload || {};
+          if (!sourceUrl || !format) {
+            sendResponse({ ok: false, error: "缺少必要参数" });
+            return;
+          }
+          await downloadFormatted(sourceUrl, format);
+          sendResponse({ ok: true });
+        } catch (error) {
+          log("导出排版结果失败", error);
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        }
+      })();
+      return true;
     case "wash-articles/export-entry":
       (async () => {
         try {
@@ -436,7 +452,7 @@ async function exportEntry(sourceUrl, format) {
   }
   const filenameBase = buildFilenameBase(entry);
   if (format === "markdown" || format === "md") {
-    const content = entryToMarkdown(entry);
+    const content = entry.formatted?.markdown || entryToMarkdown(entry);
     await downloadBlob(`${filenameBase}.md`, content, "text/markdown");
     return;
   }
@@ -486,6 +502,30 @@ function computeCounts(items) {
   return counters;
 }
 
+async function downloadFormatted(sourceUrl, format) {
+  const history = await loadHistory();
+  const entry = history.find((item) => item.sourceUrl === sourceUrl);
+  if (!entry) {
+    throw new Error("未找到对应历史记录");
+  }
+  if (!entry.formatted) {
+    throw new Error("当前记录尚未生成排版结果");
+  }
+  const filenameBase = buildFilenameBase(entry);
+  if (format === "markdown") {
+    const content = entry.formatted.markdown || entryToMarkdown(entry);
+    await downloadBlob(`${filenameBase}.formatted.md`, content, "text/markdown");
+    return;
+  }
+  if (format === "html") {
+    const htmlBody = entry.formatted.html || "<article></article>";
+    const documentHtml = wrapHtmlDocument(entry.title || "Wash Articles", htmlBody);
+    await downloadBlob(`${filenameBase}.formatted.html`, documentHtml, "text/html");
+    return;
+  }
+  throw new Error(`不支持的导出格式: ${format}`);
+}
+
 async function downloadBlob(filename, content, mimeType) {
   const dataUrl = `data:${mimeType};charset=utf-8,${encodeURIComponent(content)}`;
   await new Promise((resolve, reject) => {
@@ -508,6 +548,20 @@ async function downloadBlob(filename, content, mimeType) {
       },
     );
   });
+}
+
+function wrapHtmlDocument(title, bodyHtml) {
+  const safeTitle = escapeHtmlText(title || "Wash Articles");
+  return `<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="UTF-8" />\n<title>${safeTitle}</title>\n<style>body{font-family:Arial,sans-serif;margin:0;padding:24px;background:#f8fafc;color:#0f172a;}article{max-width:780px;margin:0 auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 8px 24px rgba(15,23,42,0.12);}h2,h3,h4{margin:24px 0 12px;}p{line-height:1.7;margin:16px 0;}figure{margin:24px 0;text-align:center;}figure img{max-width:100%;border-radius:12px;}figcaption{margin-top:8px;font-size:13px;color:#475569;}</style>\n</head>\n<body>\n${bodyHtml}\n</body>\n</html>`;
+}
+
+function escapeHtmlText(input) {
+  return String(input ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function entryToMarkdown(entry) {

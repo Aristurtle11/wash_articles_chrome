@@ -15,6 +15,8 @@ const formattedStatusEl = document.getElementById("formatted-status");
 const formattedPreviewEl = document.getElementById("formatted-preview");
 const copyMarkdownBtn = document.getElementById("copy-markdown");
 const copyHtmlBtn = document.getElementById("copy-html");
+const downloadMarkdownBtn = document.getElementById("download-markdown");
+const downloadHtmlBtn = document.getElementById("download-html");
 
 let lastSourceUrl = null;
 let historyEntries = [];
@@ -126,6 +128,8 @@ function updateFormattedButtons() {
   const available = Boolean(formattedState?.html || formattedState?.markdown);
   copyHtmlBtn.disabled = !available;
   copyMarkdownBtn.disabled = !available;
+  downloadHtmlBtn.disabled = !available;
+  downloadMarkdownBtn.disabled = !available;
 }
 
 function renderHistory(entries) {
@@ -333,6 +337,40 @@ copyMarkdownBtn.addEventListener("click", () => {
     .catch((error) => {
       alert(`复制失败：${error.message ?? error}`);
     });
+});
+
+function triggerDownload(format) {
+  if (!formattedState) return;
+  if (!lastSourceUrl) {
+    alert("暂无可导出的页面数据");
+    return;
+  }
+  chrome.runtime.sendMessage(
+    {
+      type: "wash-articles/download-formatted",
+      payload: { sourceUrl: lastSourceUrl, format },
+    },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        alert(`导出失败：${chrome.runtime.lastError.message}`);
+        return;
+      }
+      if (!response?.ok) {
+        alert(`导出失败：${response?.error || "未知错误"}`);
+        return;
+      }
+      formattedStatusEl.textContent = format === "html" ? "已触发 HTML 下载" : "已触发 Markdown 下载";
+      setTimeout(() => renderFormatted(formattedState), 1500);
+    },
+  );
+}
+
+downloadHtmlBtn.addEventListener("click", () => {
+  triggerDownload("html");
+});
+
+downloadMarkdownBtn.addEventListener("click", () => {
+  triggerDownload("markdown");
 });
 
 function requestExport(sourceUrl, format) {
