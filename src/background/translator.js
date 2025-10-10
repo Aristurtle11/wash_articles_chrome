@@ -34,27 +34,31 @@ export class TranslatorService {
 
     const serialized = serializeItems(items);
     const chunkTexts = chunkSegments(serialized, MAX_CHUNK_CHARS);
-    const results = [];
+    const responses = [];
 
     for (let index = 0; index < chunkTexts.length; index += 1) {
       const prompt = buildPrompt(chunkTexts[index], { sourceUrl, title }, index + 1, chunkTexts.length);
       const response = await this._callGemini(prompt);
-      const text = normalizeResponseText(response);
-      if (!text) {
-        const block = extractBlockReason(response);
-        if (block) {
-          throw new Error(`Gemini 拒绝翻译：${block}`);
-        }
-        const finishReason = extractFinishReason(response);
-        console.warn("[WashArticles] Gemini 响应为空", response);
-        throw new Error(
-          finishReason
-            ? `Gemini 未返回翻译结果 (finishReason=${finishReason})`
-            : "Gemini 未返回翻译结果",
-        );
-      }
-      results.push(text.trim());
+      responses.push(response);
     }
+
+    const results = responses.map((response) => {
+      const text = normalizeResponseText(response);
+      if (text) {
+        return text.trim();
+      }
+      const block = extractBlockReason(response);
+      if (block) {
+        throw new Error(`Gemini 拒绝翻译：${block}`);
+      }
+      const finishReason = extractFinishReason(response);
+      console.warn("[WashArticles] Gemini 响应为空", response);
+      throw new Error(
+        finishReason
+          ? `Gemini 未返回翻译结果 (finishReason=${finishReason})`
+          : "Gemini 未返回翻译结果",
+      );
+    });
 
     return {
       text: results.join("\n\n"),
