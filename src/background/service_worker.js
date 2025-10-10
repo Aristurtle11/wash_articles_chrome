@@ -11,6 +11,7 @@ import {
   clearHistory,
 } from "./storage.js";
 import { TranslatorService } from "./translator.js";
+import { FormatterService } from "./formatter.js";
 import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
@@ -20,6 +21,7 @@ import {
 
 const store = new ContentStore();
 const translator = new TranslatorService();
+const formatter = new FormatterService();
 let currentSettings = { ...DEFAULT_SETTINGS };
 const ports = new Set();
 
@@ -292,6 +294,7 @@ async function handleTranslateRequest(tabId) {
       updatedAt: new Date().toISOString(),
       error: null,
     },
+    formatted: null,
   }));
   await emitTranslationUpdate(tabId);
 
@@ -311,7 +314,7 @@ async function handleTranslateRequest(tabId) {
         error: null,
       },
     }));
-
+    await generateFormattedOutput(tabId);
     await syncHistoryEntry(tabId);
     await emitTranslationUpdate(tabId);
   } catch (error) {
@@ -325,8 +328,39 @@ async function handleTranslateRequest(tabId) {
         updatedAt: new Date().toISOString(),
       },
     }));
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      formatted: entry.formatted ?? null,
+    }));
     await emitTranslationUpdate(tabId);
     throw new Error(message);
+  }
+}
+
+async function generateFormattedOutput(tabId) {
+  const current = store.get(tabId);
+  if (!current?.translation || current.translation.status !== "done") {
+    return;
+  }
+  try {
+    const formatted = formatter.format({
+      translationText: current.translation.text,
+      items: current.items || [],
+      images: current.cachedImages || [],
+    });
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      formatted,
+    }));
+    await sendMessageSafely({
+      type: "wash-articles/formatted-updated",
+      payload: {
+        sourceUrl: current.sourceUrl,
+        formatted,
+      },
+    });
+  } catch (error) {
+    log("排版生成失败", error);
   }
 }
 
@@ -350,6 +384,7 @@ async function emitTranslationUpdate(tabId) {
     payload: {
       sourceUrl: current.sourceUrl,
       translation: current.translation ?? null,
+      formatted: current.formatted ?? null,
     },
   });
 }
@@ -425,6 +460,13 @@ function buildHistoryEntry(payload, images) {
           model: payload.translation.model,
           updatedAt: payload.translation.updatedAt,
           error: payload.translation.error ?? null,
+        }
+      : null,
+    formatted: payload?.formatted
+      ? {
+          html: payload.formatted.html,
+          markdown: payload.formatted.markdown,
+          updatedAt: payload.formatted.updatedAt,
         }
       : null,
   };

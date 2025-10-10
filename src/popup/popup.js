@@ -11,11 +11,16 @@ const translationStatusEl = document.getElementById("translation-status");
 const translationTextEl = document.getElementById("translation-text");
 const translateBtn = document.getElementById("translate-btn");
 const openSettingsBtn = document.getElementById("open-settings");
+const formattedStatusEl = document.getElementById("formatted-status");
+const formattedPreviewEl = document.getElementById("formatted-preview");
+const copyMarkdownBtn = document.getElementById("copy-markdown");
+const copyHtmlBtn = document.getElementById("copy-html");
 
 let lastSourceUrl = null;
 let historyEntries = [];
 let translationState = null;
 let hasApiKey = false;
+let formattedState = null;
 const port = chrome.runtime.connect({ name: "wash-articles" });
 
 function renderSummary(items, counts) {
@@ -100,6 +105,29 @@ function updateTranslateButton() {
   translateBtn.disabled = isWorking || !hasApiKey || !hasSource;
 }
 
+function renderFormatted(formatted) {
+  formattedState = formatted ?? null;
+  if (!formatted || !formatted.html) {
+    formattedStatusEl.textContent = translationState?.status === "working"
+      ? "翻译完成后将自动排版"
+      : "等待翻译完成";
+    formattedPreviewEl.innerHTML = "暂无排版结果";
+    updateFormattedButtons();
+    return;
+  }
+  formattedStatusEl.textContent = formatted.updatedAt
+    ? `排版完成：${formatDate(formatted.updatedAt)}`
+    : "排版完成";
+  formattedPreviewEl.innerHTML = formatted.html;
+  updateFormattedButtons();
+}
+
+function updateFormattedButtons() {
+  const available = Boolean(formattedState?.html || formattedState?.markdown);
+  copyHtmlBtn.disabled = !available;
+  copyMarkdownBtn.disabled = !available;
+}
+
 function renderHistory(entries) {
   historyEntries = Array.isArray(entries) ? entries : [];
   historyListEl.innerHTML = "";
@@ -154,6 +182,7 @@ function render(payload) {
     renderImages([]);
     lastSourceUrl = null;
     renderTranslation(null);
+    renderFormatted(null);
     return;
   }
   const sourceUrl = payload.sourceUrl ?? "";
@@ -169,6 +198,7 @@ function render(payload) {
   }
   lastSourceUrl = sourceUrl;
   renderTranslation(payload.translation ?? null);
+  renderFormatted(payload.formatted ?? null);
 }
 
 function requestImages(sourceUrl) {
@@ -215,7 +245,12 @@ historyListEl.addEventListener("click", (event) => {
   const entry = historyEntries[index];
   if (!entry) return;
   if (action === "load") {
-    render({ ...entry, cachedImages: entry.images });
+    render({
+      ...entry,
+      cachedImages: entry.images,
+      translation: entry.translation,
+      formatted: entry.formatted,
+    });
   } else if (action === "export-json") {
     requestExport(entry.sourceUrl, "json");
   } else if (action === "export-markdown") {
@@ -270,6 +305,36 @@ openSettingsBtn.addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
+copyHtmlBtn.addEventListener("click", () => {
+  if (!formattedState?.html) return;
+  navigator.clipboard
+    .writeText(formattedState.html)
+    .then(() => {
+      formattedStatusEl.textContent = "已复制 HTML";
+      setTimeout(() => {
+        renderFormatted(formattedState);
+      }, 1500);
+    })
+    .catch((error) => {
+      alert(`复制失败：${error.message ?? error}`);
+    });
+});
+
+copyMarkdownBtn.addEventListener("click", () => {
+  if (!formattedState?.markdown) return;
+  navigator.clipboard
+    .writeText(formattedState.markdown)
+    .then(() => {
+      formattedStatusEl.textContent = "已复制 Markdown";
+      setTimeout(() => {
+        renderFormatted(formattedState);
+      }, 1500);
+    })
+    .catch((error) => {
+      alert(`复制失败：${error.message ?? error}`);
+    });
+});
+
 function requestExport(sourceUrl, format) {
   chrome.runtime.sendMessage({ type: "wash-articles/export-entry", payload: { sourceUrl, format } }, (response) => {
     if (chrome.runtime.lastError) {
@@ -318,9 +383,16 @@ function handleRuntimeMessage(message) {
       return;
     }
     renderTranslation(message.payload.translation ?? null);
+    renderFormatted(message.payload.formatted ?? null);
   }
   if (message?.type === "wash-articles/settings-updated") {
     applySettings(message.settings ?? {});
+  }
+  if (message?.type === "wash-articles/formatted-updated") {
+    if (!message.payload?.sourceUrl || message.payload.sourceUrl !== lastSourceUrl) {
+      return;
+    }
+    renderFormatted(message.payload.formatted ?? null);
   }
 }
 

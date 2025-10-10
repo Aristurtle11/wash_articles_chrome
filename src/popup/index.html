@@ -106,6 +106,41 @@
         font-size: 12px;
         color: #475569;
       }
+      .formatted-preview {
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 12px;
+        background: #fff;
+        max-height: 280px;
+        overflow-y: auto;
+      }
+      .formatted-preview h2,
+      .formatted-preview h3,
+      .formatted-preview h4 {
+        margin: 12px 0 6px;
+      }
+      .formatted-preview p {
+        margin: 8px 0;
+        line-height: 1.6;
+      }
+      .formatted-preview figure {
+        margin: 12px 0;
+        text-align: center;
+      }
+      .formatted-preview img {
+        max-width: 100%;
+        border-radius: 6px;
+      }
+      .formatted-preview figcaption {
+        font-size: 12px;
+        color: #475569;
+        margin-top: 4px;
+      }
+      .formatted-preview .credit {
+        margin-left: 4px;
+        color: #94a3b8;
+        font-style: italic;
+      }
       .history-list {
         list-style: none;
         padding: 0;
@@ -159,6 +194,17 @@
       <div class="history-actions" style="justify-content:flex-end;">
         <button id="translate-btn">开始翻译</button>
         <button id="open-settings" class="secondary">配置 API Key</button>
+      </div>
+    </div>
+    <div class="section" id="formatted-section">
+      <div class="translation-header">
+        <h2>排版预览</h2>
+        <span id="formatted-status" class="translation-status">等待翻译完成</span>
+      </div>
+      <div id="formatted-preview" class="formatted-preview">暂无排版结果</div>
+      <div class="history-actions" style="justify-content:flex-end;">
+        <button id="copy-markdown" class="secondary">复制 Markdown</button>
+        <button id="copy-html">复制 HTML</button>
       </div>
     </div>
     <div class="section" id="history-section">
