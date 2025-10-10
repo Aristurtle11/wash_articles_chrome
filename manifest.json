@@ -11,7 +11,7 @@
     "downloads"
   ],
   "host_permissions": [
-    "<all_urls>"
+    "https://www.realtor.com/news/*"
   ],
   "background": {
     "service_worker": "src/background/service_worker.js",
@@ -21,7 +21,7 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "https://www.realtor.com/news/*"
       ],
       "js": [
         "src/content/extractor.js",

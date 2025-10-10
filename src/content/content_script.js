@@ -3,6 +3,12 @@
 
 (() => {
   const baseUrl = window.location.href;
+  const allowedPrefix = "https://www.realtor.com/news/";
+  if (!baseUrl.startsWith(allowedPrefix)) {
+    console.info("[WashArticles] 当前页面不在支持范围内，跳过处理", baseUrl);
+    return;
+  }
+
   const capturedAt = new Date().toISOString();
   const title = document.title ? document.title.trim() : "";
   console.info("[WashArticles] 内容脚本已注入：", baseUrl);
