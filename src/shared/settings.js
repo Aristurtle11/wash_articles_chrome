@@ -3,6 +3,10 @@ export const DEFAULT_SETTINGS = {
   apiKey: "",
   model: "gemini-2.5-flash",
   updatedAt: null,
+  wechatAccessToken: "",
+  wechatDefaultAuthor: "",
+  wechatOriginUrl: "",
+  wechatThumbMediaId: "",
 };
 
 export function normalizeSettings(raw) {
@@ -18,5 +22,11 @@ export function normalizeSettings(raw) {
 export function maskApiKey(apiKey) {
   if (!apiKey) return "尚未配置";
   const visible = apiKey.slice(-4);
+  return `••••••${visible}`;
+}
+
+export function maskToken(token) {
+  if (!token) return "尚未配置";
+  const visible = token.slice(-4);
   return `••••••${visible}`;
 }

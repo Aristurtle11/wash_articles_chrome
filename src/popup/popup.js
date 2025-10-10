@@ -17,12 +17,23 @@ const copyMarkdownBtn = document.getElementById("copy-markdown");
 const copyHtmlBtn = document.getElementById("copy-html");
 const downloadMarkdownBtn = document.getElementById("download-markdown");
 const downloadHtmlBtn = document.getElementById("download-html");
+const wechatStatusEl = document.getElementById("wechat-status");
+const wechatTitleInput = document.getElementById("wechat-title");
+const wechatDigestInput = document.getElementById("wechat-digest");
+const wechatSourceInput = document.getElementById("wechat-source-url");
+const wechatThumbInput = document.getElementById("wechat-thumb-media");
+const wechatCreateBtn = document.getElementById("wechat-create");
+const wechatCopyPayloadBtn = document.getElementById("wechat-copy-payload");
+const wechatDraftOutput = document.getElementById("wechat-draft-output");
 
 let lastSourceUrl = null;
 let historyEntries = [];
 let translationState = null;
 let hasApiKey = false;
 let formattedState = null;
+let wechatConfigured = false;
+let defaultWechatOriginUrl = "";
+let wechatDraftState = null;
 const port = chrome.runtime.connect({ name: "wash-articles" });
 
 function renderSummary(items, counts) {
@@ -88,6 +99,7 @@ function renderTranslation(translation) {
       ? `翻译完成：${formatDate(translation.updatedAt)}`
       : "翻译完成";
     translationTextEl.value = translation.text ?? "";
+    prefillWechatFields();
   }
 
   updateTranslateButton();
@@ -115,6 +127,7 @@ function renderFormatted(formatted) {
       : "等待翻译完成";
     formattedPreviewEl.innerHTML = "暂无排版结果";
     updateFormattedButtons();
+    updateWechatButtons();
     return;
   }
   formattedStatusEl.textContent = formatted.updatedAt
@@ -122,6 +135,13 @@ function renderFormatted(formatted) {
     : "排版完成";
   formattedPreviewEl.innerHTML = formatted.html;
   updateFormattedButtons();
+  prefillWechatFields();
+  wechatDraftState = null;
+  wechatDraftOutput.value = "";
+  wechatStatusEl.textContent = wechatConfigured
+    ? "可生成公众号草稿"
+    : "未配置 Access Token，使用试运行模式";
+  updateWechatButtons();
 }
 
 function updateFormattedButtons() {
@@ -130,6 +150,41 @@ function updateFormattedButtons() {
   copyMarkdownBtn.disabled = !available;
   downloadHtmlBtn.disabled = !available;
   downloadMarkdownBtn.disabled = !available;
+}
+
+function updateWechatButtons() {
+  const available = Boolean(formattedState?.html);
+  if (wechatCreateBtn) {
+    wechatCreateBtn.disabled = !available;
+  }
+  if (wechatCopyPayloadBtn) {
+    wechatCopyPayloadBtn.disabled = !wechatDraftState;
+  }
+  if (!available) {
+    wechatStatusEl.textContent = hasApiKey ? "等待翻译完成" : "请先完成翻译";
+  } else if (!wechatConfigured) {
+    wechatStatusEl.textContent = "未配置 Access Token，使用试运行模式";
+  } else if (!wechatDraftState) {
+    wechatStatusEl.textContent = "可生成公众号草稿";
+  }
+}
+
+function prefillWechatFields() {
+  if (!translationState) {
+    return;
+  }
+  if (translationState.status !== "done") {
+    return;
+  }
+  if (wechatTitleInput && !wechatTitleInput.value) {
+    wechatTitleInput.value = deriveTitleFromTranslation(translationState.text || "");
+  }
+  if (wechatDigestInput && !wechatDigestInput.value) {
+    wechatDigestInput.value = buildDigestFromTranslation(translationState.text || "");
+  }
+  if (wechatSourceInput && !wechatSourceInput.value) {
+    wechatSourceInput.value = defaultWechatOriginUrl || lastSourceUrl || "";
+  }
 }
 
 function renderHistory(entries) {
@@ -373,6 +428,68 @@ downloadMarkdownBtn.addEventListener("click", () => {
   triggerDownload("markdown");
 });
 
+wechatCreateBtn.addEventListener("click", () => {
+  if (!formattedState?.html) {
+    alert("请先完成翻译与排版");
+    return;
+  }
+  if (!lastSourceUrl) {
+    alert("暂无可提交的文章链接");
+    return;
+  }
+  const metadata = {
+    title: wechatTitleInput.value.trim() || deriveTitleFromTranslation(translationState?.text || ""),
+    digest: wechatDigestInput.value.trim(),
+    sourceUrl: wechatSourceInput.value.trim() || lastSourceUrl,
+    thumbMediaId: wechatThumbInput.value.trim(),
+  };
+
+  wechatStatusEl.textContent = wechatConfigured ? "正在生成公众号草稿…" : "试运行：生成模拟草稿…";
+
+  chrome.runtime.sendMessage(
+    {
+      type: "wash-articles/wechat-create-draft",
+      payload: {
+        sourceUrl: lastSourceUrl,
+        metadata,
+        dryRun: !wechatConfigured,
+      },
+    },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        wechatStatusEl.textContent = `生成失败：${chrome.runtime.lastError.message}`;
+        return;
+      }
+      if (!response?.ok) {
+        wechatStatusEl.textContent = `生成失败：${response?.error || "未知错误"}`;
+        return;
+      }
+      wechatDraftState = response.draft;
+      wechatDraftOutput.value = JSON.stringify(response.draft?.payload ?? {}, null, 2);
+      wechatStatusEl.textContent = response.dryRun
+        ? "试运行草稿已生成"
+        : `草稿创建成功，media_id=${response.draft?.media_id || "未知"}`;
+      updateWechatButtons();
+    },
+  );
+});
+
+wechatCopyPayloadBtn.addEventListener("click", () => {
+  if (!wechatDraftState?.payload) {
+    alert("暂无可复制的草稿内容");
+    return;
+  }
+  navigator.clipboard
+    .writeText(JSON.stringify(wechatDraftState.payload, null, 2))
+    .then(() => {
+      wechatStatusEl.textContent = "草稿 JSON 已复制";
+      setTimeout(() => updateWechatButtons(), 1500);
+    })
+    .catch((error) => {
+      alert(`复制失败：${error?.message ?? error}`);
+    });
+});
+
 function requestExport(sourceUrl, format) {
   chrome.runtime.sendMessage({ type: "wash-articles/export-entry", payload: { sourceUrl, format } }, (response) => {
     if (chrome.runtime.lastError) {
@@ -402,6 +519,20 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function deriveTitleFromTranslation(text) {
+  if (!text) return "待确认标题";
+  const firstLine = String(text)
+    .split(/\r?\n/)
+    .find((line) => line.trim());
+  return firstLine ? firstLine.trim().slice(0, 60) : "待确认标题";
+}
+
+function buildDigestFromTranslation(text) {
+  if (!text) return "";
+  const plain = String(text).replace(/\s+/g, " ").trim();
+  return plain.slice(0, 120);
 }
 
 function handleRuntimeMessage(message) {

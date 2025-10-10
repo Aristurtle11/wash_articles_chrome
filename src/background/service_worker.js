@@ -12,11 +12,13 @@ import {
 } from "./storage.js";
 import { TranslatorService } from "./translator.js";
 import { FormatterService } from "./formatter.js";
+import { uploadImagesForWeChat, createWeChatDraft } from "./wechat_service.js";
 import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
   normalizeSettings,
   maskApiKey,
+  maskToken,
 } from "../shared/settings.js";
 
 const store = new ContentStore();
@@ -169,6 +171,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       handleTranslateRequest(targetTabId)
         .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        });
+      return true;
+    }
+    case "wash-articles/wechat-create-draft": {
+      const sourceUrl = message.payload?.sourceUrl || null;
+      const targetTabId =
+        tabId ?? findTabIdBySource(sourceUrl) ?? store.entries()[0]?.tabId ?? null;
+      if (!targetTabId) {
+        sendResponse({ ok: false, error: "未找到对应页面内容" });
+        return false;
+      }
+      handleWeChatDraftRequest(targetTabId, message.payload ?? {})
+        .then((result) => sendResponse({ ok: true, ...result }))
         .catch((error) => {
           sendResponse({ ok: false, error: error?.message ?? String(error) });
         });
@@ -351,6 +368,55 @@ async function handleTranslateRequest(tabId) {
     await emitTranslationUpdate(tabId);
     throw new Error(message);
   }
+}
+
+async function handleWeChatDraftRequest(tabId, payload) {
+  const current = store.get(tabId);
+  if (!current || !Array.isArray(current.items) || current.items.length === 0) {
+    throw new Error("请先提取正文内容");
+  }
+  if (!current.translation || current.translation.status !== "done") {
+    throw new Error("请先完成翻译");
+  }
+  if (!current.formatted) {
+    await generateFormattedOutput(tabId);
+  }
+
+  const dryRun = Boolean(payload.dryRun || !currentSettings.wechatAccessToken);
+  const metadata = {
+    title: payload.metadata?.title || current.title || deriveDefaultTitle(current),
+    author: payload.metadata?.author || currentSettings.wechatDefaultAuthor || "",
+    digest: payload.metadata?.digest || buildDigestFromTranslation(current.translation?.text || ""),
+    sourceUrl:
+      payload.metadata?.sourceUrl || currentSettings.wechatOriginUrl || current.sourceUrl || "",
+    needOpenComment: Boolean(payload.metadata?.needOpenComment),
+    onlyFansCanComment: Boolean(payload.metadata?.onlyFansCanComment),
+    thumbMediaId: payload.metadata?.thumbMediaId || currentSettings.wechatThumbMediaId || "",
+  };
+
+  const uploads = await uploadImagesForWeChat(current.cachedImages || [], {
+    accessToken: currentSettings.wechatAccessToken,
+    dryRun,
+  });
+
+  const draft = await createWeChatDraft(
+    {
+      formatted: current.formatted,
+      translation: current.translation,
+      metadata,
+      sourceUrl: current.sourceUrl,
+    },
+    uploads,
+    {
+      accessToken: currentSettings.wechatAccessToken,
+      dryRun,
+    },
+  );
+
+  return {
+    dryRun: draft.dryRun ?? dryRun,
+    draft,
+  };
 }
 
 async function generateFormattedOutput(tabId) {
@@ -599,6 +665,24 @@ function entryToMarkdown(entry) {
   return lines.join("\n");
 }
 
+function buildDigestFromTranslation(text) {
+  if (!text) return "";
+  const plain = String(text).replace(/\s+/g, " ").trim();
+  return plain.slice(0, 120);
+}
+
+function deriveDefaultTitle(current) {
+  if (current?.title) {
+    return current.title;
+  }
+  const translation = current?.translation?.text || "";
+  const firstLine = translation.split(/\r?\n/).find((line) => line.trim());
+  if (firstLine) {
+    return firstLine.trim().slice(0, 60);
+  }
+  return "待确认标题";
+}
+
 function mergeImages(existing = [], downloads = []) {
   const byUrl = new Map();
   for (const img of existing || []) {
@@ -694,5 +778,9 @@ function sanitizeSettings(settings) {
     model: normalized.model,
     updatedAt: normalized.updatedAt,
     maskedKey: maskApiKey(normalized.apiKey),
+    wechatConfigured: Boolean(normalized.wechatAccessToken),
+    wechatMaskedToken: maskToken(normalized.wechatAccessToken),
+    wechatDefaultAuthor: normalized.wechatDefaultAuthor || "",
+    wechatOriginUrl: normalized.wechatOriginUrl || "",
   };
 }

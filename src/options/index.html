@@ -7,13 +7,18 @@
       body {
         font-family: Arial, sans-serif;
         margin: 24px auto;
-        max-width: 560px;
+        max-width: 640px;
         color: #1f2933;
       }
       h1 {
         color: #1a73e8;
         font-size: 24px;
         margin-bottom: 12px;
+      }
+      h2 {
+        margin: 24px 0 8px;
+        font-size: 18px;
+        color: #0f172a;
       }
       p.note {
         font-size: 13px;
@@ -31,13 +36,13 @@
         flex-direction: column;
         gap: 6px;
       }
-      input {
+      input, textarea {
         padding: 10px;
         border-radius: 6px;
         border: 1px solid #cbd5f5;
         font-size: 14px;
       }
-      input:focus {
+      input:focus, textarea:focus {
         border-color: #1a73e8;
         outline: none;
         box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.18);
@@ -67,29 +72,69 @@
       .error {
         color: #dc2626;
       }
+      .section {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 18px;
+        background: #ffffff;
+      }
+      .section + .section {
+        margin-top: 24px;
+      }
     </style>
   </head>
   <body>
     <h1>Wash Articles 设置</h1>
-    <p class="note">
-      在此配置 Gemini API Key 和默认模型。扩展会将信息保存在浏览器账号的同步存储中，仅本地可见。
-    </p>
+    <div class="section">
+      <h2>翻译服务</h2>
+      <p class="note">配置 Gemini API Key 以便在浏览器端完成翻译。</p>
+      <form id="settings-form">
+        <label>
+          Gemini API Key
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
+        </label>
+        <label>
+          默认模型
+          <input id="model" type="text" value="gemini-2.5-flash" />
+        </label>
+        <div class="actions">
+          <button type="submit">保存</button>
+          <button type="button" id="clear" class="secondary">清除</button>
+          <span id="status" class="status"></span>
+        </div>
+      </form>
+    </div>
 
-    <form id="settings-form">
-      <label>
-        Gemini API Key
-        <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
-      </label>
-      <label>
-        默认模型
-        <input id="model" type="text" value="gemini-2.5-flash" />
-      </label>
-      <div class="actions">
-        <button type="submit">保存</button>
-        <button type="button" id="clear" class="secondary">清除</button>
-        <span id="status" class="status"></span>
-      </div>
-    </form>
+    <div class="section">
+      <h2>微信公众号</h2>
+      <p class="note">
+        如需直接上传到公众号，请填写 Access Token（或保持留空以使用试运行模式）。
+        可选地设定默认作者、阅读原文链接和封面 <code>thumb_media_id</code>。
+      </p>
+      <form id="wechat-form">
+        <label>
+          Access Token
+          <input id="wechatAccessToken" type="password" placeholder="公众号 Access Token" autocomplete="off" />
+        </label>
+        <label>
+          默认作者
+          <input id="wechatDefaultAuthor" type="text" placeholder="作者名称，可留空" />
+        </label>
+        <label>
+          阅读原文链接
+          <input id="wechatOriginUrl" type="url" placeholder="https://example.com/original" />
+        </label>
+        <label>
+          默认 thumb_media_id
+          <input id="wechatThumbMediaId" type="text" placeholder="可选，公众号素材库中的封面 media_id" />
+        </label>
+        <div class="actions">
+          <button type="button" id="wechat-save">保存公众号配置</button>
+          <button type="button" id="wechat-clear" class="secondary">清除公众号配置</button>
+          <span id="wechat-status" class="status"></span>
+        </div>
+      </form>
+    </div>
 
     <script type="module" src="./options.js"></script>
   </body>
