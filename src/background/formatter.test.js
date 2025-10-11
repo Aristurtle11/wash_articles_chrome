@@ -24,9 +24,10 @@ describe("FormatterService", () => {
       images: SAMPLE_IMAGES,
     });
 
-    expect(html).toContain("<h2>News</h2>");
-    expect(html).toContain("<p>段落一</p>");
-    expect(html).toContain("<figure>");
+    expect(html).toContain("<article style=");
+    expect(html).toContain("<h2 style=");
+    expect(html).toContain("段落一");
+    expect(html).toContain('<div style="margin:28px 0');
     expect(markdown).toContain("![示例图片](https://example.com/a.jpg)");
     expect(markdown).toMatch(/段落二/);
   });

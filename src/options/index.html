@@ -108,13 +108,17 @@
     <div class="section">
       <h2>微信公众号</h2>
       <p class="note">
-        如需直接上传到公众号，请填写 Access Token（或保持留空以使用试运行模式）。
+        输入公众号的 AppID 与 AppSecret 后，扩展会自动申请 Access Token 并在过期前刷新。
         可选地设定默认作者、阅读原文链接和封面 <code>thumb_media_id</code>。
       </p>
       <form id="wechat-form">
         <label>
-          Access Token
-          <input id="wechatAccessToken" type="password" placeholder="公众号 Access Token" autocomplete="off" />
+          AppID
+          <input id="wechatAppId" type="text" placeholder="wx..." autocomplete="off" />
+        </label>
+        <label>
+          AppSecret
+          <input id="wechatAppSecret" type="password" placeholder="公众号 AppSecret" autocomplete="off" />
         </label>
         <label>
           默认作者

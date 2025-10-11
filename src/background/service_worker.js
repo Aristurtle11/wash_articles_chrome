@@ -26,6 +26,10 @@ const translator = new TranslatorService();
 const formatter = new FormatterService();
 let currentSettings = { ...DEFAULT_SETTINGS };
 const ports = new Set();
+const WECHAT_TOKEN_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/stable_token";
+const WECHAT_TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+let skipWeChatAutoRefresh = false;
+let wechatTokenRefreshPromise = null;
 
 function log(...args) {
   console.info("[WashArticles:SW]", ...args);
@@ -176,6 +180,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       return true;
     }
+    case "wash-articles/wechat-refresh-token":
+      (async () => {
+        try {
+          const result = await refreshWeChatAccessToken({
+            forceRefresh: Boolean(message.payload?.forceRefresh),
+          });
+          sendResponse({ ok: true, ...result });
+        } catch (error) {
+          const errorCode = error?.errcode ?? error?.errorCode ?? null;
+          sendResponse({
+            ok: false,
+            error: error?.message ?? String(error),
+            errorCode,
+          });
+        }
+      })();
+      return true;
     case "wash-articles/wechat-create-draft": {
       const sourceUrl = message.payload?.sourceUrl || null;
       const targetTabId =
@@ -382,7 +403,17 @@ async function handleWeChatDraftRequest(tabId, payload) {
     await generateFormattedOutput(tabId);
   }
 
-  const dryRun = Boolean(payload.dryRun || !currentSettings.wechatAccessToken);
+  let ensuredToken = currentSettings.wechatAccessToken || "";
+  try {
+    if (!ensuredToken) {
+      const refreshed = await refreshWeChatAccessToken({ forceRefresh: false });
+      ensuredToken = refreshed.accessToken || "";
+    }
+  } catch (error) {
+    log("尝试获取 Access Token 失败：", error);
+  }
+
+  const dryRun = Boolean(payload.dryRun || !ensuredToken);
   const metadata = {
     title: payload.metadata?.title || current.title || deriveDefaultTitle(current),
     author: payload.metadata?.author || currentSettings.wechatDefaultAuthor || "",
@@ -395,7 +426,7 @@ async function handleWeChatDraftRequest(tabId, payload) {
   };
 
   const uploads = await uploadImagesForWeChat(current.cachedImages || [], {
-    accessToken: currentSettings.wechatAccessToken,
+    accessToken: ensuredToken,
     dryRun,
   });
 
@@ -408,7 +439,7 @@ async function handleWeChatDraftRequest(tabId, payload) {
     },
     uploads,
     {
-      accessToken: currentSettings.wechatAccessToken,
+      accessToken: ensuredToken,
       dryRun,
     },
   );
@@ -482,8 +513,18 @@ async function initializeSettings() {
 }
 
 async function updateSettings(settings) {
+  const previous = currentSettings;
   currentSettings = settings;
   translator.updateSettings(settings);
+  if (skipWeChatAutoRefresh) {
+    skipWeChatAutoRefresh = false;
+  } else {
+    try {
+      await maybeAutoRefreshWeChatToken(previous, settings);
+    } catch (error) {
+      log("自动刷新公众号 Access Token 失败：", error);
+    }
+  }
   await sendSettingsUpdate();
 }
 
@@ -762,13 +803,171 @@ function sendMessageSafely(message) {
       const error = chrome.runtime.lastError;
       if (error) {
         const msg = String(error.message || "");
-        if (!msg.includes("The message port closed before a response was received.")) {
+        if (
+          !msg.includes("The message port closed before a response was received.") &&
+          !msg.includes("Could not establish connection. Receiving end does not exist.")
+        ) {
           log("发送消息失败（可忽略）", msg);
         }
       }
       resolve();
     });
   });
+}
+
+async function maybeAutoRefreshWeChatToken(previous, next) {
+  if (!hasWeChatCredentials(next)) {
+    if (next.wechatAccessToken || next.wechatTokenExpiresAt) {
+      await clearWeChatToken();
+    }
+    return;
+  }
+
+  const credentialsChanged =
+    previous?.wechatAppId !== next.wechatAppId || previous?.wechatAppSecret !== next.wechatAppSecret;
+  if (credentialsChanged) {
+    await refreshWeChatAccessToken({ forceRefresh: true });
+    return;
+  }
+
+  if (isWeChatTokenExpired(next)) {
+    await refreshWeChatAccessToken({ forceRefresh: false });
+  }
+}
+
+function hasWeChatCredentials(settings) {
+  return Boolean(settings?.wechatAppId && settings?.wechatAppSecret);
+}
+
+function isWeChatTokenExpired(settings) {
+  if (!settings?.wechatAccessToken) {
+    return true;
+  }
+  const expiresAt = parseDate(settings.wechatTokenExpiresAt);
+  if (!expiresAt) {
+    return true;
+  }
+  return expiresAt.getTime() <= Date.now() + WECHAT_TOKEN_REFRESH_MARGIN_MS;
+}
+
+function parseDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+async function clearWeChatToken() {
+  if (!currentSettings.wechatAccessToken && !currentSettings.wechatTokenExpiresAt) {
+    return;
+  }
+  await applySettingsPatch({
+    wechatAccessToken: "",
+    wechatTokenExpiresAt: null,
+  });
+}
+
+async function applySettingsPatch(patch) {
+  skipWeChatAutoRefresh = true;
+  const updated = {
+    ...currentSettings,
+    ...patch,
+    wechatUpdatedAt: new Date().toISOString(),
+  };
+  currentSettings = updated;
+  try {
+    await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
+  } catch (error) {
+    skipWeChatAutoRefresh = false;
+    throw error;
+  }
+  return updated;
+}
+
+async function refreshWeChatAccessToken({ forceRefresh = false } = {}) {
+  if (wechatTokenRefreshPromise) {
+    return wechatTokenRefreshPromise;
+  }
+  wechatTokenRefreshPromise = (async () => {
+    if (!hasWeChatCredentials(currentSettings)) {
+      throw new Error("请先配置 AppID 与 AppSecret");
+    }
+
+    if (!forceRefresh && !isWeChatTokenExpired(currentSettings)) {
+      return {
+        accessToken: currentSettings.wechatAccessToken,
+        expiresAt: currentSettings.wechatTokenExpiresAt,
+        fromCache: true,
+      };
+    }
+
+    const requestPayload = {
+      grant_type: "client_credential",
+      appid: currentSettings.wechatAppId,
+      secret: currentSettings.wechatAppSecret,
+    };
+    if (forceRefresh) {
+      requestPayload.force_refresh = true;
+    }
+
+    const response = await fetch(WECHAT_TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestPayload),
+      cache: "no-store",
+    });
+    let responsePayload = null;
+    try {
+      responsePayload = await response.json();
+    } catch (error) {
+      throw new Error("Access Token 响应解析失败");
+    }
+
+    if (!response.ok) {
+      const code = responsePayload?.errcode ?? response.status;
+      const message = responsePayload?.errmsg || `HTTP ${response.status}`;
+      const err = new Error(`Access Token 获取失败（errcode=${code}）：${message}`);
+      err.errcode = code;
+      err.errmsg = message;
+      throw err;
+    }
+
+    const token = responsePayload?.access_token;
+    if (!token) {
+      const code = responsePayload?.errcode ?? "unknown";
+      const message = responsePayload?.errmsg || "接口未返回 access_token";
+      const err = new Error(`Access Token 获取失败（errcode=${code}）：${message}`);
+      err.errcode = code;
+      err.errmsg = message;
+      throw err;
+    }
+
+    const expiresInSeconds = Number(responsePayload.expires_in) || 7200;
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+    const patched = await applySettingsPatch({
+      wechatAccessToken: token,
+      wechatTokenExpiresAt: expiresAt,
+    });
+
+    return {
+      accessToken: token,
+      expiresAt,
+      settings: patched,
+      fromCache: false,
+    };
+  })()
+    .catch((error) => {
+      log("获取公众号 Access Token 失败", error);
+      throw error;
+    })
+    .finally(() => {
+      wechatTokenRefreshPromise = null;
+    });
+  return wechatTokenRefreshPromise;
 }
 
 function sanitizeSettings(settings) {
@@ -778,8 +977,11 @@ function sanitizeSettings(settings) {
     model: normalized.model,
     updatedAt: normalized.updatedAt,
     maskedKey: maskApiKey(normalized.apiKey),
+    wechatHasCredentials: Boolean(normalized.wechatAppId && normalized.wechatAppSecret),
     wechatConfigured: Boolean(normalized.wechatAccessToken),
     wechatMaskedToken: maskToken(normalized.wechatAccessToken),
+    wechatTokenExpiresAt: normalized.wechatTokenExpiresAt,
+    wechatUpdatedAt: normalized.wechatUpdatedAt,
     wechatDefaultAuthor: normalized.wechatDefaultAuthor || "",
     wechatOriginUrl: normalized.wechatOriginUrl || "",
   };

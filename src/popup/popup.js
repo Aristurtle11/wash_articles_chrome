@@ -31,7 +31,9 @@ let historyEntries = [];
 let translationState = null;
 let hasApiKey = false;
 let formattedState = null;
-let wechatConfigured = false;
+let wechatHasCredentials = false;
+let wechatHasToken = false;
+let wechatTokenExpiresAt = null;
 let defaultWechatOriginUrl = "";
 let wechatDraftState = null;
 const port = chrome.runtime.connect({ name: "wash-articles" });
@@ -127,6 +129,7 @@ function renderFormatted(formatted) {
       : "等待翻译完成";
     formattedPreviewEl.innerHTML = "暂无排版结果";
     updateFormattedButtons();
+    setWechatIdleStatus();
     updateWechatButtons();
     return;
   }
@@ -138,9 +141,7 @@ function renderFormatted(formatted) {
   prefillWechatFields();
   wechatDraftState = null;
   wechatDraftOutput.value = "";
-  wechatStatusEl.textContent = wechatConfigured
-    ? "可生成公众号草稿"
-    : "未配置 Access Token，使用试运行模式";
+  setWechatIdleStatus();
   updateWechatButtons();
 }
 
@@ -160,13 +161,26 @@ function updateWechatButtons() {
   if (wechatCopyPayloadBtn) {
     wechatCopyPayloadBtn.disabled = !wechatDraftState;
   }
-  if (!available) {
-    wechatStatusEl.textContent = hasApiKey ? "等待翻译完成" : "请先完成翻译";
-  } else if (!wechatConfigured) {
-    wechatStatusEl.textContent = "未配置 Access Token，使用试运行模式";
-  } else if (!wechatDraftState) {
-    wechatStatusEl.textContent = "可生成公众号草稿";
+  if (!wechatDraftState) {
+    setWechatIdleStatus();
   }
+}
+
+function setWechatIdleStatus() {
+  if (!formattedState?.html) {
+    wechatStatusEl.textContent = hasApiKey ? "等待翻译完成" : "请先完成翻译";
+    return;
+  }
+  if (!wechatHasCredentials) {
+    wechatStatusEl.textContent = "尚未配置公众号凭证";
+    return;
+  }
+  if (!wechatHasToken) {
+    wechatStatusEl.textContent = "已配置凭证，首次生成时将自动申请 Access Token";
+    return;
+  }
+  const expiryText = wechatTokenExpiresAt ? `（有效期至 ${formatDate(wechatTokenExpiresAt)}）` : "";
+  wechatStatusEl.textContent = `可生成公众号草稿${expiryText}`;
 }
 
 function prefillWechatFields() {
@@ -291,6 +305,13 @@ function applySettings(settings) {
     translationStatusEl.textContent = "请先配置 API Key";
   } else if (!translationState) {
     translationStatusEl.textContent = "尚未翻译";
+  }
+  wechatHasCredentials = Boolean(settings?.wechatHasCredentials);
+  wechatHasToken = Boolean(settings?.wechatConfigured);
+  wechatTokenExpiresAt = settings?.wechatTokenExpiresAt || null;
+  defaultWechatOriginUrl = settings?.wechatOriginUrl || "";
+  if (!wechatDraftState) {
+    setWechatIdleStatus();
   }
   updateTranslateButton();
 }
@@ -444,7 +465,9 @@ wechatCreateBtn.addEventListener("click", () => {
     thumbMediaId: wechatThumbInput.value.trim(),
   };
 
-  wechatStatusEl.textContent = wechatConfigured ? "正在生成公众号草稿…" : "试运行：生成模拟草稿…";
+  wechatStatusEl.textContent = wechatHasCredentials
+    ? "正在生成公众号草稿…"
+    : "试运行：生成模拟草稿…";
 
   chrome.runtime.sendMessage(
     {
@@ -452,7 +475,7 @@ wechatCreateBtn.addEventListener("click", () => {
       payload: {
         sourceUrl: lastSourceUrl,
         metadata,
-        dryRun: !wechatConfigured,
+        dryRun: !wechatHasCredentials,
       },
     },
     (response) => {

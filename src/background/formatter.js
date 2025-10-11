@@ -2,6 +2,81 @@ import { escapeHtml } from "../shared/text.js";
 
 const IMAGE_PLACEHOLDER = /\{\{\[(?:Image)(?:\s+(\d+))?\]\}\}/i;
 
+const ARTICLE_STYLE = [
+  "margin:0 auto",
+  "padding:0 0 40px",
+  "max-width:680px",
+  "font-family:'PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif",
+  "font-size:16px",
+  "line-height:1.75",
+  "color:#1f2937",
+  "word-break:break-word",
+].join(";");
+
+const PARAGRAPH_STYLE = [
+  "margin:0 0 18px",
+  "text-align:justify",
+  "text-indent:2em",
+  "font-size:16px",
+  "line-height:1.78",
+  "letter-spacing:0.02em",
+  "color:#1f2937",
+].join(";");
+
+const HEADING_STYLES = {
+  2: [
+    "margin:32px 0 18px",
+    "font-size:24px",
+    "line-height:1.45",
+    "font-weight:700",
+    "color:#111827",
+    "letter-spacing:0.01em",
+  ].join(";"),
+  3: [
+    "margin:28px 0 16px",
+    "font-size:20px",
+    "line-height:1.5",
+    "font-weight:600",
+    "color:#1f2937",
+    "letter-spacing:0.01em",
+  ].join(";"),
+  4: [
+    "margin:24px 0 14px",
+    "font-size:18px",
+    "line-height:1.55",
+    "font-weight:600",
+    "color:#334155",
+  ].join(";"),
+};
+
+const IMAGE_WRAPPER_STYLE = [
+  "margin:28px 0",
+  "text-align:center",
+];
+
+const IMAGE_STYLE = [
+  "display:block",
+  "max-width:100%",
+  "border-radius:12px",
+  "box-shadow:0 10px 28px rgba(15,23,42,0.15)",
+  "margin:0 auto",
+];
+
+const CAPTION_STYLE = [
+  "margin-top:12px",
+  "font-size:13px",
+  "line-height:1.6",
+  "color:#64748b",
+  "text-align:center",
+];
+
+const CREDIT_STYLE = [
+  "display:inline-block",
+  "margin-left:8px",
+  "font-size:12px",
+  "color:#94a3b8",
+];
+
 export class FormatterService {
   format({ translationText, items, images }) {
     const segments = Array.isArray(items) ? items : [];
@@ -67,33 +142,65 @@ function parseBlocks(text) {
 
 function renderHtml(blocks, items, images) {
   if (!blocks.length) {
-    return "<article><p>暂无排版结果</p></article>";
+    return `<article style="${ARTICLE_STYLE}"><p style="${PARAGRAPH_STYLE}">暂无排版结果</p></article>`;
   }
-  const htmlBlocks = blocks.map((block) => {
-    if (block.kind === "heading") {
-      const level = Math.min(Math.max(block.level || 2, 2), 4);
-      return `<h${level}>${escapeHtml(block.text || "")}</h${level}>`;
-    }
-    if (block.kind === "paragraph") {
-      return `<p>${escapeHtml(block.text || "")}</p>`;
-    }
-    if (block.kind === "image") {
-      const image = findImage(block.sequence, items, images);
-      if (!image) {
-        return "";
+  const htmlBlocks = blocks
+    .map((block, index) => {
+      if (block.kind === "heading") {
+        const level = Math.min(Math.max(block.level || 2, 2), 4);
+        const style = HEADING_STYLES[level] || HEADING_STYLES[3];
+        return `<h${level} style="${style}">${escapeHtml(block.text || "")}</h${level}>`;
       }
-      const src = escapeHtml(image.dataUrl || image.url || "");
-      const alt = escapeHtml(image.alt || "图像");
-      const caption = escapeHtml(image.caption || "");
-      const credit = escapeHtml(image.credit || "");
-      const captionHtml = caption
-        ? `<figcaption>${caption}${credit ? `<span class="credit">${credit}</span>` : ""}</figcaption>`
-        : "";
-      return `<figure><img src="${src}" alt="${alt}" />${captionHtml}</figure>`;
-    }
-    return "";
-  });
-  return `<article>\n${htmlBlocks.filter(Boolean).join("\n")}\n</article>`;
+      if (block.kind === "paragraph") {
+        const text = enrichParagraphSpacing(block.text || "", index === 0);
+        return `<p style="${PARAGRAPH_STYLE}">${escapeHtml(text)}</p>`;
+      }
+      if (block.kind === "image") {
+        const image = findImage(block.sequence, items, images);
+        if (!image) {
+          return "";
+        }
+        return renderImageBlock(image, block.sequence);
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  return `<article style="${ARTICLE_STYLE}">\n${htmlBlocks}\n</article>`;
+}
+
+function enrichParagraphSpacing(text, isFirstParagraph) {
+  if (!text) return "";
+  if (isFirstParagraph) {
+    return text;
+  }
+  return text.replace(/([。！？;?#])\s+/g, "$1 ");
+}
+
+function renderImageBlock(image, sequence) {
+  const wrapperStyle = IMAGE_WRAPPER_STYLE.join(";");
+  const imageStyle = IMAGE_STYLE.join(";");
+  const captionStyle = CAPTION_STYLE.join(";");
+  const creditStyle = CREDIT_STYLE.join(";");
+
+  const src = escapeHtml(image.dataUrl || image.url || "");
+  const alt = escapeHtml(image.alt || `图像${sequence ?? ""}`);
+  const caption = escapeHtml(image.caption || "");
+  const credit = escapeHtml(image.credit || "");
+  const captionHtml = caption
+    ? `<div style="${captionStyle}">${caption}${credit ? `<span style="${creditStyle}">图源：${credit}</span>` : ""}</div>`
+    : credit
+      ? `<div style="${captionStyle}"><span style="${creditStyle}">图源：${credit}</span></div>`
+      : "";
+  return [
+    `<div style="${wrapperStyle}">`,
+    `<img src="${src}" alt="${alt}" style="${imageStyle}" />`,
+    captionHtml,
+    `</div>`,
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 function renderMarkdown(blocks, items, images) {

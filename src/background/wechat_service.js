@@ -1,4 +1,4 @@
-const IMAGE_UPLOAD_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/media/uploadimg";
+const IMAGE_UPLOAD_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/material/add_material";
 const DRAFT_CREATE_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/draft/add";
 
 export async function uploadImagesForWeChat(images, { accessToken, dryRun }) {
@@ -12,7 +12,13 @@ export async function uploadImagesForWeChat(images, { accessToken, dryRun }) {
       continue;
     }
     if (dryRun || !accessToken) {
-      results.push({ ...image, remoteUrl: localSrc, localSrc, dryRun: true });
+      results.push({
+        ...image,
+        remoteUrl: localSrc,
+        localSrc,
+        dryRun: true,
+        mediaId: `<dry-run:${buildFilename(image)}>`,
+      });
       continue;
     }
     const blob = await toBlob(localSrc);
@@ -20,16 +26,35 @@ export async function uploadImagesForWeChat(images, { accessToken, dryRun }) {
     formData.append("media", blob, buildFilename(image));
     const endpoint = new URL(IMAGE_UPLOAD_ENDPOINT);
     endpoint.searchParams.set("access_token", accessToken);
+    endpoint.searchParams.set("type", "image");
     const response = await fetch(endpoint.toString(), {
       method: "POST",
       body: formData,
     });
-    const json = await response.json();
-    if (!response.ok || !json?.url) {
-      const message = json?.errmsg || `上传失败(${response.status})`;
-      throw new Error(message);
+    let json = null;
+    try {
+      json = await response.json();
+    } catch (error) {
+      throw new Error("上传图片响应解析失败");
     }
-    results.push({ ...image, remoteUrl: json.url, localSrc, dryRun: false });
+    const errcode = json?.errcode ?? null;
+    if (!response.ok || errcode) {
+      const message = json?.errmsg || `上传失败(${response.status})`;
+      const wrapped = new Error(`${message}${errcode ? `（errcode=${errcode}）` : ""}`);
+      wrapped.errcode = errcode ?? response.status;
+      wrapped.errmsg = json?.errmsg ?? message;
+      throw wrapped;
+    }
+    if (!json?.url || !json?.media_id) {
+      throw new Error("上传成功但缺少 URL 或 media_id");
+    }
+    results.push({
+      ...image,
+      remoteUrl: json.url,
+      localSrc,
+      mediaId: json.media_id,
+      dryRun: false,
+    });
   }
   return results;
 }
@@ -40,21 +65,31 @@ export async function createWeChatDraft(
   { accessToken, dryRun },
 ) {
   const articleHtml = replaceImageSources(formatted?.html || translation?.text || "", uploads);
-  const digest = metadata?.digest || buildDigest(translation?.text || "");
+  const digest = prepareDigest(metadata?.digest || buildDigest(translation?.text || ""));
+  const thumbMediaId =
+    metadata?.thumbMediaId ||
+    (uploads && uploads.length > 0 ? uploads[0]?.mediaId || "" : "") ||
+    "";
+  if (!thumbMediaId && !dryRun && accessToken) {
+    throw new Error("缺少封面素材 ID，无法创建草稿");
+  }
   const payload = {
     articles: [
       {
+        article_type: "news",
         title: metadata?.title || deriveTitle(translation?.text || formatted?.markdown || ""),
         author: metadata?.author || "",
         content: articleHtml,
         digest,
-        content_source_url: metadata?.sourceUrl || sourceUrl || "",
+        content_source_url: (metadata?.sourceUrl || sourceUrl || "").trim(),
         need_open_comment: metadata?.needOpenComment ? 1 : 0,
         only_fans_can_comment: metadata?.onlyFansCanComment ? 1 : 0,
-        thumb_media_id: metadata?.thumbMediaId || "",
       },
     ],
   };
+  if (thumbMediaId) {
+    payload.articles[0].thumb_media_id = thumbMediaId;
+  }
 
   if (dryRun || !accessToken) {
     return {
@@ -74,10 +109,19 @@ export async function createWeChatDraft(
     },
     body: JSON.stringify(payload),
   });
-  const json = await response.json();
-  if (!response.ok || !json?.media_id) {
+  let json = null;
+  try {
+    json = await response.json();
+  } catch (error) {
+    throw new Error("草稿响应解析失败");
+  }
+  const errcode = json?.errcode ?? null;
+  if (!response.ok || errcode || !json?.media_id) {
     const message = json?.errmsg || `草稿创建失败(${response.status})`;
-    throw new Error(message);
+    const wrapped = new Error(`${message}${errcode ? `（errcode=${errcode}）` : ""}`);
+    wrapped.errcode = errcode ?? response.status;
+    wrapped.errmsg = json?.errmsg ?? message;
+    throw wrapped;
   }
   return {
     media_id: json.media_id,
@@ -116,6 +160,21 @@ function buildDigest(text) {
   if (!text) return "";
   const plain = text.replace(/\s+/g, " ").trim();
   return plain.slice(0, 120);
+}
+
+function prepareDigest(text) {
+  if (!text) return "";
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const bytes = encoder.encode(text);
+  if (bytes.length <= 256) {
+    return text;
+  }
+  let truncated = bytes.slice(0, 256);
+  while (truncated.length && (truncated[truncated.length - 1] & 0xC0) === 0x80) {
+    truncated = truncated.slice(0, -1);
+  }
+  return decoder.decode(truncated);
 }
 
 function deriveTitle(text) {

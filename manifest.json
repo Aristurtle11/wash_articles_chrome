@@ -11,7 +11,8 @@
     "downloads"
   ],
   "host_permissions": [
-    "https://www.realtor.com/news/*"
+    "https://www.realtor.com/news/*",
+    "https://api.weixin.qq.com/*"
   ],
   "background": {
     "service_worker": "src/background/service_worker.js",

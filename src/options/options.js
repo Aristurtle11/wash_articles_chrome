@@ -7,7 +7,8 @@ const statusEl = document.getElementById("status");
 const clearBtn = document.getElementById("clear");
 
 const wechatForm = document.getElementById("wechat-form");
-const wechatAccessTokenInput = document.getElementById("wechatAccessToken");
+const wechatAppIdInput = document.getElementById("wechatAppId");
+const wechatAppSecretInput = document.getElementById("wechatAppSecret");
 const wechatDefaultAuthorInput = document.getElementById("wechatDefaultAuthor");
 const wechatOriginUrlInput = document.getElementById("wechatOriginUrl");
 const wechatThumbMediaIdInput = document.getElementById("wechatThumbMediaId");
@@ -25,11 +26,12 @@ async function loadSettings() {
     statusEl.textContent = current.updatedAt ? `最近更新：${formatDate(current.updatedAt)}` : "";
     statusEl.classList.remove("error");
 
-    wechatAccessTokenInput.value = current.wechatAccessToken || "";
+    wechatAppIdInput.value = current.wechatAppId || "";
+    wechatAppSecretInput.value = current.wechatAppSecret || "";
     wechatDefaultAuthorInput.value = current.wechatDefaultAuthor || "";
     wechatOriginUrlInput.value = current.wechatOriginUrl || "";
     wechatThumbMediaIdInput.value = current.wechatThumbMediaId || "";
-    wechatStatusEl.textContent = current.wechatAccessToken ? "已保存微信公众号配置" : "尚未配置 Access Token";
+    wechatStatusEl.textContent = buildWechatStatus(current);
     wechatStatusEl.classList.remove("error");
   } catch (error) {
     const msg = error?.message ?? String(error);
@@ -51,6 +53,39 @@ function formatDate(value) {
     return value;
   }
   return value;
+}
+
+function buildWechatStatus(settings) {
+  if (!settings) return "尚未配置公众号信息";
+  if (!settings.wechatAppId || !settings.wechatAppSecret) {
+    return "尚未配置 AppID / AppSecret";
+  }
+  if (!settings.wechatAccessToken && !settings.wechatTokenExpiresAt) {
+    return "已保存凭证，等待获取 Access Token";
+  }
+  if (settings.wechatTokenExpiresAt) {
+    return `Access Token 已缓存，将于 ${formatDate(settings.wechatTokenExpiresAt)} 过期`;
+  }
+  return "Access Token 已缓存";
+}
+
+function refreshWechatToken(forceRefresh) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      {
+        type: "wash-articles/wechat-refresh-token",
+        payload: { forceRefresh },
+      },
+      (response) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          reject(new Error(error.message));
+          return;
+        }
+        resolve(response || {});
+      },
+    );
+  });
 }
 
 async function saveTranslatorSettings(event) {
@@ -83,7 +118,10 @@ async function clearTranslatorSettings() {
     const current = normalizeSettings(result[SETTINGS_KEY]);
     const updated = {
       ...DEFAULT_SETTINGS,
+      wechatAppId: current.wechatAppId,
+      wechatAppSecret: current.wechatAppSecret,
       wechatAccessToken: current.wechatAccessToken,
+      wechatTokenExpiresAt: current.wechatTokenExpiresAt,
       wechatDefaultAuthor: current.wechatDefaultAuthor,
       wechatOriginUrl: current.wechatOriginUrl,
       wechatThumbMediaId: current.wechatThumbMediaId,
@@ -100,24 +138,50 @@ async function clearTranslatorSettings() {
 }
 
 async function saveWechatSettings() {
-  const accessToken = wechatAccessTokenInput.value.trim();
+  const appId = wechatAppIdInput.value.trim();
+  const appSecret = wechatAppSecretInput.value.trim();
   const defaultAuthor = wechatDefaultAuthorInput.value.trim();
   const originUrl = wechatOriginUrlInput.value.trim();
   const thumbMediaId = wechatThumbMediaIdInput.value.trim();
   try {
+    wechatStatusEl.textContent = "正在保存配置…";
+    wechatStatusEl.classList.remove("error");
     const result = await chrome.storage.sync.get(SETTINGS_KEY);
     const current = normalizeSettings(result[SETTINGS_KEY]);
+    const credentialsChanged =
+      current.wechatAppId !== appId || current.wechatAppSecret !== appSecret;
+    const hadToken = Boolean(current.wechatAccessToken);
     const updated = {
       ...current,
-      wechatAccessToken: accessToken,
+      wechatAppId: appId,
+      wechatAppSecret: appSecret,
       wechatDefaultAuthor: defaultAuthor,
       wechatOriginUrl: originUrl,
       wechatThumbMediaId: thumbMediaId,
       wechatUpdatedAt: new Date().toISOString(),
     };
     await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
-    wechatStatusEl.textContent = accessToken ? "公众号配置已保存" : "已清除 Access Token";
-    wechatStatusEl.classList.remove("error");
+    if (appId && appSecret) {
+      wechatStatusEl.textContent = "正在申请 Access Token…";
+      const response = await refreshWechatToken(credentialsChanged || !hadToken);
+      if (!response?.ok) {
+        const reason = response?.error || "未知错误";
+        const code = response?.errorCode;
+        const message = code ? `Access Token 获取失败（errcode=${code}）：${reason}` : reason;
+        throw new Error(message);
+      }
+      const merged = {
+        ...updated,
+        wechatAccessToken: response.accessToken || updated.wechatAccessToken || "",
+        wechatTokenExpiresAt: response.expiresAt || updated.wechatTokenExpiresAt || null,
+      };
+      wechatStatusEl.textContent = buildWechatStatus(merged);
+      wechatStatusEl.classList.remove("error");
+    } else {
+      wechatStatusEl.textContent = "公众号配置已保存（未填写凭证）";
+      wechatStatusEl.classList.remove("error");
+    }
+    await loadSettings();
   } catch (error) {
     wechatStatusEl.textContent = `保存失败：${error?.message ?? error}`;
     wechatStatusEl.classList.add("error");
@@ -130,14 +194,18 @@ async function clearWechatSettings() {
     const current = normalizeSettings(result[SETTINGS_KEY]);
     const updated = {
       ...current,
+      wechatAppId: "",
+      wechatAppSecret: "",
       wechatAccessToken: "",
+      wechatTokenExpiresAt: null,
       wechatDefaultAuthor: "",
       wechatOriginUrl: "",
       wechatThumbMediaId: "",
       wechatUpdatedAt: new Date().toISOString(),
     };
     await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
-    wechatAccessTokenInput.value = "";
+    wechatAppIdInput.value = "";
+    wechatAppSecretInput.value = "";
     wechatDefaultAuthorInput.value = "";
     wechatOriginUrlInput.value = "";
     wechatThumbMediaIdInput.value = "";
