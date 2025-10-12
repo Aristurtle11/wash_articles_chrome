@@ -8,8 +8,6 @@ function createDom() {
     <div id="capture-time"></div>
     <ul id="summary-list"></ul>
     <div id="summary-empty"></div>
-    <div id="images-grid"></div>
-    <div id="images-empty"></div>
     <ul id="history-list"></ul>
     <div id="history-empty"></div>
     <button id="history-clear"></button>
@@ -88,9 +86,6 @@ describe("popup UI", () => {
                   wechatOriginUrl: "",
                 },
               };
-              break;
-            case "wash-articles/get-images":
-              response = { images: [] };
               break;
             default:
               response = { ok: true };

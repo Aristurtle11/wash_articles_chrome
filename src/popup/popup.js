@@ -2,8 +2,6 @@ const sourceUrlEl = document.getElementById("source-url");
 const captureTimeEl = document.getElementById("capture-time");
 const summaryListEl = document.getElementById("summary-list");
 const summaryEmptyEl = document.getElementById("summary-empty");
-const imagesGridEl = document.getElementById("images-grid");
-const imagesEmptyEl = document.getElementById("images-empty");
 const historyListEl = document.getElementById("history-list");
 const historyEmptyEl = document.getElementById("history-empty");
 const historyClearBtn = document.getElementById("history-clear");
@@ -83,30 +81,6 @@ function renderSummary(items, counts) {
     const li = document.createElement("li");
     li.textContent = text;
     summaryListEl.appendChild(li);
-  });
-}
-
-function renderImages(images) {
-  imagesGridEl.innerHTML = "";
-  if (!images || !images.length) {
-    imagesEmptyEl.style.display = "block";
-    return;
-  }
-  imagesEmptyEl.style.display = "none";
-  images.slice(0, 8).forEach((img) => {
-    if (img?.error) {
-      const div = document.createElement("div");
-      div.className = "image-error";
-      div.textContent = "加载失败";
-      div.title = `${img.url}\n${img.error}`;
-      imagesGridEl.appendChild(div);
-      return;
-    }
-    const thumb = document.createElement("img");
-    thumb.src = img?.dataUrl || img?.url || "";
-    thumb.alt = img?.alt || "";
-    thumb.title = img?.url || "";
-    imagesGridEl.appendChild(thumb);
   });
 }
 
@@ -346,7 +320,6 @@ function render(payload) {
     sourceUrlEl.textContent = "暂无数据";
     captureTimeEl.textContent = "";
     summaryEmptyEl.style.display = "block";
-    renderImages([]);
     lastSourceUrl = null;
     renderTranslation(null);
     renderTitle(null);
@@ -360,11 +333,6 @@ function render(payload) {
   sourceUrlEl.textContent = sourceUrl || "未知来源";
   captureTimeEl.textContent = capturedAt ? `采集时间：${formatDate(capturedAt)}` : "";
   renderSummary(payload.items ?? [], counts);
-  const cachedImages = payload.cachedImages || payload.images || [];
-  renderImages(cachedImages);
-  if (!cachedImages.length && sourceUrl && sourceUrl !== lastSourceUrl) {
-    requestImages(sourceUrl);
-  }
   lastSourceUrl = sourceUrl;
   renderTranslation(payload.translation ?? null);
   renderTitle(payload.titleTask ?? null);
@@ -374,21 +342,6 @@ function render(payload) {
   if (wechatDraftState?.payload) {
     wechatDraftOutput.value = JSON.stringify(wechatDraftState.payload, null, 2);
   }
-}
-
-function requestImages(sourceUrl) {
-  chrome.runtime.sendMessage(
-    { type: "wash-articles/get-images", payload: { sourceUrl } },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        console.warn("获取图片缓存失败：", chrome.runtime.lastError.message);
-        return;
-      }
-      if (sourceUrl === lastSourceUrl) {
-        renderImages(response?.images ?? []);
-      }
-    },
-  );
 }
 
 function requestHistory() {
@@ -677,9 +630,7 @@ function handleRuntimeMessage(message) {
     render(message.payload);
   }
   if (message?.type === "wash-articles/images-cached") {
-    if (message.payload?.sourceUrl === lastSourceUrl) {
-      renderImages(message.payload.images ?? []);
-    }
+    // 已移除图片面板，该消息忽略
   }
   if (message?.type === "wash-articles/history-updated") {
     renderHistory(message.history ?? []);

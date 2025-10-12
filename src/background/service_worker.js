@@ -293,7 +293,7 @@ async function cacheImagesForPayload(tabId, payload) {
         continue;
       }
       try {
-        const downloaded = await fetchImage(candidate.url);
+        const downloaded = await fetchImage(candidate.url, tabId);
         downloads.push({
           sequence: candidate.sequence ?? null,
           url: candidate.url,
@@ -1180,22 +1180,83 @@ function mergeImages(existing = [], downloads = []) {
   return sortImagesForUpload(Array.from(byUrl.values()));
 }
 
-async function fetchImage(url) {
-  const response = await fetch(url, {
-    credentials: "include",
-    mode: "cors",
-  });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+async function fetchImage(url, tabId) {
+  try {
+    const response = await fetch(url, {
+      mode: "cors",
+      credentials: "omit",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const buffer = await response.arrayBuffer();
+    const mimeType = response.headers.get("content-type") || "application/octet-stream";
+    return {
+      mimeType,
+      size: buffer.byteLength,
+      dataUrl: `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    if (Number.isInteger(tabId)) {
+      try {
+        const captured = await captureImageViaContentScript(tabId, url);
+        if (captured) {
+          return captured;
+        }
+      } catch (fallbackError) {
+        const combined = new Error(fallbackError?.message ?? String(fallbackError));
+        combined.cause = error;
+        throw combined;
+      }
+    }
+    throw error;
   }
-  const buffer = await response.arrayBuffer();
-  const mimeType = response.headers.get("content-type") || "application/octet-stream";
-  return {
-    mimeType,
-    size: buffer.byteLength,
-    dataUrl: `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`,
-    fetchedAt: new Date().toISOString(),
-  };
+}
+
+async function captureImageViaContentScript(tabId, url) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      {
+        type: "wash-articles/capture-image",
+        payload: { url },
+      },
+      (response) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          reject(new Error(runtimeError.message));
+          return;
+        }
+        if (!response || response.ok !== true || !response.dataUrl) {
+          reject(new Error(response?.error || "图像捕获失败"));
+          return;
+        }
+        const dataUrl = response.dataUrl;
+        const mimeType =
+          response.mimeType ||
+          (typeof dataUrl === "string" && dataUrl.includes(";base64,")
+            ? dataUrl.split(";")[0].split(":")[1] || "image/png"
+            : "image/png");
+        const sizeBytes = response.sizeBytes ?? estimateDataUrlSize(dataUrl);
+        resolve({
+          mimeType,
+          size: sizeBytes,
+          dataUrl,
+          fetchedAt: new Date().toISOString(),
+        });
+      },
+    );
+  });
+}
+
+function estimateDataUrlSize(dataUrl) {
+  if (typeof dataUrl !== "string") return 0;
+  const base64 = dataUrl.split(",")[1] || "";
+  if (!base64) return 0;
+  const padding = (base64.match(/=+$/) || [""])[0].length;
+  return Math.max(0, Math.floor((base64.length * 3) / 4) - padding);
 }
 
 function arrayBufferToBase64(buffer) {
