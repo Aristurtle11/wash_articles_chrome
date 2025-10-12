@@ -16,10 +16,10 @@ const SAMPLE_IMAGES = [
 describe("FormatterService", () => {
   it("renders headings, paragraphs, and images to HTML/Markdown", () => {
     const formatter = new FormatterService();
-    const translationText = "## News\n\n段落一\n\n{{[Image 1]}}\n\n段落二";
+    const articleText = "## News\n\n段落一\n\n{{[Image 1]}}\n\n段落二";
 
     const { html, markdown } = formatter.format({
-      translationText,
+      articleText,
       items: SAMPLE_ITEMS,
       images: SAMPLE_IMAGES,
     });
@@ -33,10 +33,10 @@ describe("FormatterService", () => {
 
   it("handles missing placeholders gracefully", () => {
     const formatter = new FormatterService();
-    const translationText = "段落一";
+    const articleText = "段落一";
 
     const { html } = formatter.format({
-      translationText,
+      articleText,
       items: SAMPLE_ITEMS,
       images: SAMPLE_IMAGES,
     });

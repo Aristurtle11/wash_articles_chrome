@@ -1,11 +1,5 @@
 import { SETTINGS_KEY, DEFAULT_SETTINGS, normalizeSettings } from "../shared/settings.js";
 
-const translatorForm = document.getElementById("settings-form");
-const apiKeyInput = document.getElementById("apiKey");
-const modelInput = document.getElementById("model");
-const statusEl = document.getElementById("status");
-const clearBtn = document.getElementById("clear");
-
 const wechatForm = document.getElementById("wechat-form");
 const wechatAppIdInput = document.getElementById("wechatAppId");
 const wechatAppSecretInput = document.getElementById("wechatAppSecret");
@@ -21,11 +15,6 @@ async function loadSettings() {
     const result = await chrome.storage.sync.get(SETTINGS_KEY);
     const current = normalizeSettings(result[SETTINGS_KEY]);
 
-    apiKeyInput.value = current.apiKey;
-    modelInput.value = DEFAULT_SETTINGS.model;
-    statusEl.textContent = current.updatedAt ? `最近更新：${formatDate(current.updatedAt)}` : "";
-    statusEl.classList.remove("error");
-
     wechatAppIdInput.value = current.wechatAppId || "";
     wechatAppSecretInput.value = current.wechatAppSecret || "";
     wechatDefaultAuthorInput.value = current.wechatDefaultAuthor || "";
@@ -35,8 +24,6 @@ async function loadSettings() {
     wechatStatusEl.classList.remove("error");
   } catch (error) {
     const msg = error?.message ?? String(error);
-    statusEl.textContent = `加载失败：${msg}`;
-    statusEl.classList.add("error");
     wechatStatusEl.textContent = `加载失败：${msg}`;
     wechatStatusEl.classList.add("error");
   }
@@ -64,7 +51,7 @@ function buildWechatStatus(settings) {
     return "已保存凭证，等待获取 Access Token";
   }
   if (settings.wechatTokenExpiresAt) {
-    return `Access Token 已缓存，将于 ${formatDate(settings.wechatTokenExpiresAt)} 过期`;
+    return `Access Token 将于 ${formatDate(settings.wechatTokenExpiresAt)} 过期`;
   }
   return "Access Token 已缓存";
 }
@@ -88,56 +75,8 @@ function refreshWechatToken(forceRefresh) {
   });
 }
 
-async function saveTranslatorSettings(event) {
+async function saveWechatSettings(event) {
   event.preventDefault();
-  const apiKey = apiKeyInput.value.trim();
-  const model = DEFAULT_SETTINGS.model;
-  try {
-    const result = await chrome.storage.sync.get(SETTINGS_KEY);
-    const current = normalizeSettings(result[SETTINGS_KEY]);
-    const updated = {
-      ...current,
-      apiKey,
-      model,
-      updatedAt: new Date().toISOString(),
-    };
-    await chrome.storage.sync.set({
-      [SETTINGS_KEY]: updated,
-    });
-    statusEl.textContent = "已保存";
-    statusEl.classList.remove("error");
-  } catch (error) {
-    statusEl.textContent = `保存失败：${error?.message ?? error}`;
-    statusEl.classList.add("error");
-  }
-}
-
-async function clearTranslatorSettings() {
-  try {
-    const result = await chrome.storage.sync.get(SETTINGS_KEY);
-    const current = normalizeSettings(result[SETTINGS_KEY]);
-    const updated = {
-      ...DEFAULT_SETTINGS,
-      wechatAppId: current.wechatAppId,
-      wechatAppSecret: current.wechatAppSecret,
-      wechatAccessToken: current.wechatAccessToken,
-      wechatTokenExpiresAt: current.wechatTokenExpiresAt,
-      wechatDefaultAuthor: current.wechatDefaultAuthor,
-      wechatOriginUrl: current.wechatOriginUrl,
-      wechatThumbMediaId: current.wechatThumbMediaId,
-    };
-    await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
-    apiKeyInput.value = "";
-    modelInput.value = DEFAULT_SETTINGS.model;
-    statusEl.textContent = "已清除";
-    statusEl.classList.remove("error");
-  } catch (error) {
-    statusEl.textContent = `清除失败：${error?.message ?? error}`;
-    statusEl.classList.add("error");
-  }
-}
-
-async function saveWechatSettings() {
   const appId = wechatAppIdInput.value.trim();
   const appSecret = wechatAppSecretInput.value.trim();
   const defaultAuthor = wechatDefaultAuthorInput.value.trim();
@@ -153,6 +92,7 @@ async function saveWechatSettings() {
     const hadToken = Boolean(current.wechatAccessToken);
     const updated = {
       ...current,
+      ...DEFAULT_SETTINGS,
       wechatAppId: appId,
       wechatAppSecret: appSecret,
       wechatDefaultAuthor: defaultAuthor,
@@ -217,8 +157,7 @@ async function clearWechatSettings() {
   }
 }
 
-translatorForm.addEventListener("submit", saveTranslatorSettings);
-clearBtn.addEventListener("click", clearTranslatorSettings);
+wechatForm.addEventListener("submit", saveWechatSettings);
 wechatSaveBtn.addEventListener("click", saveWechatSettings);
 wechatClearBtn.addEventListener("click", clearWechatSettings);
 

@@ -86,26 +86,6 @@
   <body>
     <h1>Wash Articles 设置</h1>
     <div class="section">
-      <h2>翻译服务</h2>
-      <p class="note">配置 Gemini API Key 以便在浏览器端完成翻译。</p>
-      <form id="settings-form">
-        <label>
-          Gemini API Key
-          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off" />
-        </label>
-        <label>
-          默认模型（固定）
-          <input id="model" type="text" value="gemini-2.5-pro" readonly />
-        </label>
-        <div class="actions">
-          <button type="submit">保存</button>
-          <button type="button" id="clear" class="secondary">清除</button>
-          <span id="status" class="status"></span>
-        </div>
-      </form>
-    </div>
-
-    <div class="section">
       <h2>微信公众号</h2>
       <p class="note">
         输入公众号的 AppID 与 AppSecret 后，扩展会自动申请 Access Token 并在过期前刷新。

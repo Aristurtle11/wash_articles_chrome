@@ -10,27 +10,23 @@ import {
   loadHistory,
   clearHistory,
 } from "./storage.js";
-import { TranslatorService, sanitizeTitle } from "./translator.js";
 import { FormatterService } from "./formatter.js";
 import { uploadImagesForWeChat, createWeChatDraft } from "./wechat_service.js";
 import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
   normalizeSettings,
-  maskApiKey,
   maskToken,
 } from "../shared/settings.js";
 
 const store = new ContentStore();
-const translator = new TranslatorService();
 const formatter = new FormatterService();
 let currentSettings = { ...DEFAULT_SETTINGS };
 const ports = new Set();
 const activePipelines = new Map();
 const WORKFLOW_STEPS = [
   "extracting",
-  "translating",
-  "title",
+  "preparing",
   "uploading",
   "formatting",
   "publishing",
@@ -115,8 +111,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             ...message.payload,
             counts: computeCounts(message.payload.items),
             cachedImages: [],
-            translation: null,
-            titleTask: null,
+            article: null,
+            title: null,
             formatted: null,
             wechatUploads: [],
             wechatDraft: null,
@@ -189,21 +185,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "wash-articles/get-settings":
       sendResponse({ settings: sanitizeSettings(currentSettings) });
       return false;
-    case "wash-articles/translate": {
-      const sourceUrl = message.payload?.sourceUrl || null;
-      const targetTabId =
-        tabId ?? findTabIdBySource(sourceUrl) ?? store.entries()[0]?.tabId ?? null;
-      if (!targetTabId) {
-        sendResponse({ ok: false, error: "无法识别标签" });
-        return false;
-      }
-      handleTranslateRequest(targetTabId)
-        .then(() => sendResponse({ ok: true }))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    }
     case "wash-articles/wechat-refresh-token":
       (async () => {
         try {
@@ -380,15 +361,14 @@ function initializeWorkflow(tabId) {
       message: "",
       steps: {
         extracting: { status: "done", updatedAt: now },
-        translating: { status: "pending" },
-        title: { status: "pending" },
+        preparing: { status: "pending" },
         uploading: { status: "pending" },
         formatting: { status: "pending" },
         publishing: { status: "pending" },
       },
     },
   }));
-  void emitTranslationUpdate(tabId);
+  void emitArticleUpdate(tabId);
 }
 
 function mutateWorkflow(tabId, mutator) {
@@ -406,7 +386,7 @@ function mutateWorkflow(tabId, mutator) {
       workflow: next,
     };
   });
-  void emitTranslationUpdate(tabId);
+  void emitArticleUpdate(tabId);
 }
 
 function setWorkflowStep(tabId, step, status, patch = {}, options = {}) {
@@ -484,12 +464,12 @@ async function startWashPipeline(tabId) {
   if (!tabId) return;
   return createWorkflowPromise(tabId, async () => {
     try {
-      await runAiTasks(tabId);
+      await runPreparationStage(tabId);
       const uploadContext = await runImageUpload(tabId);
       await runFormattingStage(tabId, uploadContext);
       await runPublishStage(tabId, uploadContext);
       finalizeWorkflowSuccess(tabId, "草稿已创建");
-      await emitTranslationUpdate(tabId);
+      await emitArticleUpdate(tabId);
     } catch (error) {
       const workflowError = error instanceof WorkflowError
         ? error
@@ -501,38 +481,61 @@ async function startWashPipeline(tabId) {
   });
 }
 
-async function runAiTasks(tabId) {
+async function runPreparationStage(tabId) {
   const currentSnapshot = store.get(tabId);
   if (!currentSnapshot || !Array.isArray(currentSnapshot.items) || currentSnapshot.items.length === 0) {
     throw new WorkflowError("extracting", "未找到可处理的正文内容");
   }
 
-  setWorkflowStep(tabId, "translating", "running");
+  setWorkflowStep(tabId, "preparing", "running");
 
   store.update(tabId, (entry = {}) => ({
     ...entry,
     translation: {
       status: "working",
       text: "",
-      model: translator.settings.model,
+      updatedAt: new Date().toISOString(),
+      error: null,
+    },
+    titleTask: {
+      status: "working",
+      text: entry.titleTask?.text ?? "",
       updatedAt: new Date().toISOString(),
       error: null,
     },
     formatted: null,
   }));
-  await emitTranslationUpdate(tabId);
+  await emitArticleUpdate(tabId);
 
-  let translationResult;
   try {
-    translationResult = await translator.translateContent(currentSnapshot.items, {
-      sourceUrl: currentSnapshot.sourceUrl,
-      title: currentSnapshot.title,
-    });
-    log("翻译阶段完成", {
+    const articleText = buildArticleText(currentSnapshot.items);
+    const preparedTitle = sanitizeTitle(
+      derivePreparedTitle(currentSnapshot, articleText),
+    );
+    const completedAt = new Date().toISOString();
+    log("内容整理完成", {
       tabId,
-      chars: translationResult.text.length,
-      model: translationResult.model,
+      chars: articleText.length,
     });
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      translation: {
+        status: "done",
+        text: articleText,
+        updatedAt: completedAt,
+        error: null,
+      },
+      titleTask: {
+        status: "done",
+        text: preparedTitle,
+        updatedAt: completedAt,
+        warning: null,
+        error: null,
+      },
+    }));
+    setWorkflowStep(tabId, "preparing", "done");
+    setWorkflowCurrentStep(tabId, "uploading");
+    await syncHistoryEntry(tabId);
   } catch (error) {
     const message = error?.message ?? String(error);
     store.update(tabId, (entry = {}) => ({
@@ -540,85 +543,22 @@ async function runAiTasks(tabId) {
       translation: {
         status: "error",
         text: entry.translation?.text ?? "",
-        model: translator.settings.model,
         updatedAt: new Date().toISOString(),
         error: message,
       },
-    }));
-    await emitTranslationUpdate(tabId);
-    throw new WorkflowError("translating", message, error);
-  }
-
-  store.update(tabId, (entry = {}) => ({
-    ...entry,
-    translation: {
-      status: "done",
-      text: translationResult.text,
-      model: translationResult.model,
-      updatedAt: translationResult.updatedAt,
-      error: null,
-    },
-  }));
-  setWorkflowStep(tabId, "translating", "done");
-  setWorkflowCurrentStep(tabId, "title");
-  await syncHistoryEntry(tabId);
-  await emitTranslationUpdate(tabId);
-
-  setWorkflowStep(tabId, "title", "running", {}, { updateCurrent: false });
-  store.update(tabId, (entry = {}) => ({
-    ...entry,
-    titleTask: {
-      status: "working",
-      text: entry.titleTask?.text ?? "",
-      updatedAt: new Date().toISOString(),
-      error: null,
-    },
-  }));
-  await emitTranslationUpdate(tabId);
-
-  try {
-    const titleResult = await translator.generateTitle(currentSnapshot.items, {
-      sourceUrl: currentSnapshot.sourceUrl,
-      fallbackTitle: currentSnapshot.title,
-      translatedText: translationResult.text,
-    });
-    log("标题生成成功", {
-      tabId,
-      title: titleResult.text,
-    });
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
       titleTask: {
-        status: "done",
-        text: titleResult.text,
-        updatedAt: titleResult.updatedAt,
-        error: null,
-      },
-    }));
-    setWorkflowStep(tabId, "title", "done");
-  } catch (error) {
-    const message = error?.message ?? String(error);
-    const fallbackBase = currentSnapshot.title || deriveDefaultTitle({ translation: { text: translationResult.text } });
-    const fallbackText = sanitizeTitle(fallbackBase) || "待确认标题";
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      titleTask: {
-        status: "done",
-        text: fallbackText,
+        status: "error",
+        text: sanitizeTitle(currentSnapshot.title || deriveDefaultTitle(entry)),
         updatedAt: new Date().toISOString(),
         warning: message,
+        error: message,
       },
     }));
-    log("标题生成失败，使用备用标题", {
-      tabId,
-      fallback: fallbackText,
-      error: message,
-    });
-    setWorkflowStep(tabId, "title", "done", { warning: message }, { updateCurrent: false });
+    await emitArticleUpdate(tabId);
+    throw new WorkflowError("preparing", message, error);
   }
 
-  await emitTranslationUpdate(tabId);
-  setWorkflowCurrentStep(tabId, "uploading");
+  await emitArticleUpdate(tabId);
 }
 
 async function runImageUpload(tabId) {
@@ -654,7 +594,7 @@ async function runImageUpload(tabId) {
         wechatUploads: [],
       }));
       setWorkflowStep(tabId, "uploading", "done");
-      await emitTranslationUpdate(tabId);
+      await emitArticleUpdate(tabId);
       return { uploads: [], accessToken };
     }
     const uploads = await uploadImagesForWeChat(uploadable, {
@@ -671,7 +611,7 @@ async function runImageUpload(tabId) {
       await saveImages(current.sourceUrl, mergedImages);
     }
     setWorkflowStep(tabId, "uploading", "done");
-    await emitTranslationUpdate(tabId);
+    await emitArticleUpdate(tabId);
     return { uploads, accessToken };
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -686,7 +626,7 @@ async function runFormattingStage(tabId, context) {
     await syncHistoryEntry(tabId);
     setWorkflowStep(tabId, "formatting", "done");
     setWorkflowCurrentStep(tabId, "publishing");
-    await emitTranslationUpdate(tabId);
+    await emitArticleUpdate(tabId);
   } catch (error) {
     const message = error?.message ?? String(error);
     throw new WorkflowError("formatting", message, error);
@@ -697,7 +637,7 @@ async function runPublishStage(tabId, context) {
   setWorkflowStep(tabId, "publishing", "running");
   const current = store.get(tabId);
   if (!current?.translation || current.translation.status !== "done") {
-    throw new WorkflowError("publishing", "翻译尚未完成，无法创建草稿");
+    throw new WorkflowError("publishing", "正文整理尚未完成，无法创建草稿");
   }
   if (!current?.formatted || !current.formatted.html) {
     throw new WorkflowError("publishing", "排版结果尚未生成");
@@ -744,7 +684,7 @@ async function runPublishStage(tabId, context) {
     }));
     setWorkflowStep(tabId, "publishing", "done");
     await syncHistoryEntry(tabId);
-    await emitTranslationUpdate(tabId);
+    await emitArticleUpdate(tabId);
   } catch (error) {
     const message = error?.message ?? String(error);
     throw new WorkflowError("publishing", message, error);
@@ -796,70 +736,13 @@ function attachUploadsToImages(images = [], uploads = []) {
   return sortImagesForUpload(merged);
 }
 
-async function handleTranslateRequest(tabId) {
-  const current = store.get(tabId);
-  if (!current || !Array.isArray(current.items) || current.items.length === 0) {
-    throw new Error("请先提取正文内容");
-  }
-
-  store.update(tabId, (entry = {}) => ({
-    ...entry,
-    translation: {
-      ...(entry.translation ?? {}),
-      status: "working",
-      model: translator.settings.model,
-      updatedAt: new Date().toISOString(),
-      error: null,
-    },
-    formatted: null,
-  }));
-  await emitTranslationUpdate(tabId);
-
-  try {
-    const result = await translator.translateContent(current.items, {
-      sourceUrl: current.sourceUrl,
-      title: current.title,
-    });
-
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      translation: {
-        status: "done",
-        text: result.text,
-        model: result.model,
-        updatedAt: result.updatedAt,
-        error: null,
-      },
-    }));
-    await syncHistoryEntry(tabId);
-    await emitTranslationUpdate(tabId);
-  } catch (error) {
-    const message = error?.message ?? String(error);
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      translation: {
-        ...(entry.translation ?? {}),
-        status: "error",
-        error: message,
-        updatedAt: new Date().toISOString(),
-      },
-    }));
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      formatted: entry.formatted ?? null,
-    }));
-    await emitTranslationUpdate(tabId);
-    throw new Error(message);
-  }
-}
-
 async function handleWeChatDraftRequest(tabId, payload) {
   const current = store.get(tabId);
   if (!current || !Array.isArray(current.items) || current.items.length === 0) {
     throw new Error("请先提取正文内容");
   }
   if (!current.translation || current.translation.status !== "done") {
-    throw new Error("请先完成翻译");
+    throw new Error("请先完成正文整理");
   }
 
   let ensuredToken = currentSettings.wechatAccessToken || "";
@@ -930,7 +813,7 @@ async function generateFormattedOutput(tabId, uploads = null) {
         : [];
     const enrichedImages = attachUploadsToImages(current.cachedImages || [], effectiveUploads);
     const formatted = formatter.format({
-      translationText: current.translation.text,
+      articleText: current.translation.text,
       items: current.items || [],
       images: enrichedImages,
       uploads: effectiveUploads,
@@ -962,7 +845,7 @@ async function syncHistoryEntry(tabId) {
   await broadcastHistory();
 }
 
-async function emitTranslationUpdate(tabId) {
+async function emitArticleUpdate(tabId) {
   const current = store.get(tabId);
   if (!current?.sourceUrl) {
     return;
@@ -994,7 +877,6 @@ async function initializeSettings() {
 async function updateSettings(settings) {
   const previous = currentSettings;
   currentSettings = settings;
-  translator.updateSettings(settings);
   if (skipWeChatAutoRefresh) {
     skipWeChatAutoRefresh = false;
   } else {
@@ -1068,7 +950,6 @@ function buildHistoryEntry(payload, images) {
       ? {
           status: payload.translation.status,
           text: payload.translation.text,
-          model: payload.translation.model,
           updatedAt: payload.translation.updatedAt,
           error: payload.translation.error ?? null,
         }
@@ -1165,6 +1046,70 @@ function escapeHtmlText(input) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function buildArticleText(items) {
+  if (!Array.isArray(items) || !items.length) {
+    return "";
+  }
+  const segments = [];
+  let fallbackImageSeq = 0;
+  for (const item of items) {
+    if (!item || typeof item !== "object") continue;
+    if (item.kind === "heading") {
+      const level = Math.min(Math.max(Number(item.level) || 2, 2), 6);
+      const text = String(item.text ?? "").trim();
+      if (text) {
+        segments.push(`${"#".repeat(level)} ${text}`);
+      }
+      continue;
+    }
+    if (item.kind === "paragraph") {
+      const text = String(item.text ?? "").trim();
+      if (text) {
+        segments.push(text);
+      }
+      continue;
+    }
+    if (item.kind === "image") {
+      const seq = Number.isFinite(item.sequence)
+        ? Number(item.sequence)
+        : (++fallbackImageSeq);
+      segments.push(`{{[Image ${seq}]}}`);
+    }
+  }
+  return segments.join("\n\n");
+}
+
+function derivePreparedTitle(snapshot, articleText) {
+  if (snapshot?.title) {
+    return snapshot.title;
+  }
+  if (Array.isArray(snapshot?.items)) {
+    const heading = snapshot.items.find((item) => item?.kind === "heading" && item.text);
+    if (heading?.text) {
+      return heading.text;
+    }
+  }
+  if (articleText) {
+    const firstLine = articleText.split(/\r?\n/).find((line) => line.trim());
+    if (firstLine) {
+      return firstLine.trim();
+    }
+  }
+  return "待确认标题";
+}
+
+function sanitizeTitle(title) {
+  if (!title) return "";
+  const cleaned = String(title)
+    .replace(/[“”"'<>\u300a\u300b《》]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[。！？!?、,.，；;:：]+$/u, "")
+    .trim();
+  if (!cleaned) return "";
+  const chars = Array.from(cleaned);
+  return chars.slice(0, 22).join("");
 }
 
 function entryToMarkdown(entry) {
@@ -1469,10 +1414,7 @@ async function refreshWeChatAccessToken({ forceRefresh = false } = {}) {
 function sanitizeSettings(settings) {
   const normalized = normalizeSettings(settings);
   return {
-    hasApiKey: Boolean(normalized.apiKey),
-    model: normalized.model,
     updatedAt: normalized.updatedAt,
-    maskedKey: maskApiKey(normalized.apiKey),
     wechatHasCredentials: Boolean(normalized.wechatAppId && normalized.wechatAppSecret),
     wechatConfigured: Boolean(normalized.wechatAccessToken),
     wechatMaskedToken: maskToken(normalized.wechatAccessToken),

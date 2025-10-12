@@ -81,10 +81,11 @@ describe("popup UI", () => {
             case "wash-articles/get-settings":
               response = {
                 settings: {
-                  hasApiKey: true,
-                  model: "gemini-2.5-pro",
-                  maskedKey: "••••",
                   updatedAt: "2025-01-01T00:00:00Z",
+                  wechatHasCredentials: false,
+                  wechatConfigured: false,
+                  wechatTokenExpiresAt: null,
+                  wechatOriginUrl: "",
                 },
               };
               break;

@@ -1,6 +1,6 @@
 # Project Overview
 
-This project is a Chrome extension named "Wash Articles Extension". Its main purpose is to extract the main text and images from web pages, translate them, and prepare them for publication, specifically targeting WeChat Official Accounts.
+This project is a Chrome extension named "Wash Articles Extension". Its main purpose is to extract the main text and images from web pages,整理正文并排版，再将内容准备好以发布到微信公众号草稿箱。
 
 ## Key Technologies
 
@@ -13,10 +13,10 @@ This project is a Chrome extension named "Wash Articles Extension". Its main pur
 
 The extension is divided into several components:
 
-*   **Background Script (`src/background/service_worker.js`):** This is the core of the extension. It manages the application state, handles content caching, image caching, history, and orchestrates the entire "washing" process which includes translation and formatting. It also communicates with the WeChat API.
+*   **Background Script (`src/background/service_worker.js`):** This is the core of the extension。它负责内容与图片缓存、历史记录维护，并编排“洗稿”流程：正文整理 → 图片上传 → 排版 → 生成公众号草稿。
 *   **Content Script (`src/content/content_script.js`):** This script is injected into web pages that match the host permissions (e.g., `https://www.realtor.com/news/*`). It's responsible for extracting the article content from the DOM.
 *   **Popup (`src/popup/`):** This provides the main user interface for the extension, allowing users to trigger the content extraction and see the results.
-*   **Options Page (`src/options/`):** This page allows users to configure the extension's settings, such as API keys for translation services and WeChat credentials.
+*   **Options Page (`src/options/`):** 该页面用于配置公众号 AppID / AppSecret 等凭证，并触发 Access Token 获取；不再需要翻译类 API 配置。
 *   **Shared Code (`src/shared/`):** This directory contains code that is shared between different parts of the extension, such as settings management.
 
 # Building and Running

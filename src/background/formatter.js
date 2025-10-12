@@ -78,10 +78,10 @@ const CREDIT_STYLE = [
 ];
 
 export class FormatterService {
-  format({ translationText, items, images }) {
+  format({ articleText, items, images }) {
     const segments = Array.isArray(items) ? items : [];
     const imageList = Array.isArray(images) ? images : [];
-    const blocks = parseBlocks(translationText || "");
+    const blocks = parseBlocks(articleText || "");
     const html = renderHtml(blocks, segments, imageList);
     return {
       html,

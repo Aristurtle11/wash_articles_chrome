@@ -32,7 +32,6 @@ const wechatDraftOutput = document.getElementById("wechat-draft-output");
 let lastSourceUrl = null;
 let historyEntries = [];
 let translationState = null;
-let hasApiKey = false;
 let formattedState = null;
 let wechatHasCredentials = false;
 let wechatHasToken = false;
@@ -46,8 +45,7 @@ const port = chrome.runtime.connect({ name: "wash-articles" });
 const WORKFLOW_STEP_MESSAGES = {
   idle: "点击 Wash 开始处理",
   extracting: "正在抓取文章内容…",
-  translating: "AI 正在翻译正文…",
-  title: "AI 正在生成中文标题…",
+  preparing: "正在整理正文与标题…",
   uploading: "正在上传图片到公众号…",
   formatting: "正在生成排版…",
   publishing: "正在创建公众号草稿…",
@@ -116,20 +114,20 @@ function renderTranslation(translation) {
   translationState = translation ?? null;
   if (!translation) {
     translationTextEl.value = "";
-    translationStatusEl.textContent = hasApiKey ? "等待任务开始" : "请先配置 API Key";
+    translationStatusEl.textContent = "等待整理开始";
     return;
   }
 
   if (translation.status === "working") {
-    translationStatusEl.textContent = "翻译中…";
+    translationStatusEl.textContent = "正文整理中…";
     translationTextEl.value = translation.text ?? translationTextEl.value ?? "";
   } else if (translation.status === "error") {
-    translationStatusEl.textContent = `翻译失败：${translation.error || "未知错误"}`;
+    translationStatusEl.textContent = `整理失败：${translation.error || "未知错误"}`;
     translationTextEl.value = translation.text ?? translationTextEl.value ?? "";
   } else {
     translationStatusEl.textContent = translation.updatedAt
-      ? `翻译完成：${formatDate(translation.updatedAt)}`
-      : "翻译完成";
+      ? `正文整理完成：${formatDate(translation.updatedAt)}`
+      : "正文整理完成";
     translationTextEl.value = translation.text ?? "";
     prefillWechatFields();
   }
@@ -139,11 +137,11 @@ function renderTitle(titleTask) {
   titleState = titleTask ?? null;
   if (!titleTask) {
     generatedTitleInput.value = "";
-    titleStatusEl.textContent = hasApiKey ? "等待任务开始" : "请先配置 API Key";
+    titleStatusEl.textContent = "等待标题整理";
     return;
   }
   if (titleTask.status === "working") {
-    titleStatusEl.textContent = "标题生成中…";
+    titleStatusEl.textContent = "标题整理中…";
   } else if (titleTask.status === "error") {
     titleStatusEl.textContent = `标题生成失败：${titleTask.error || "未知错误"}`;
   } else {
@@ -170,7 +168,7 @@ function renderWorkflow(state) {
   if (state.status === "running") {
     setWashButtonLoading();
     const message =
-      WORKFLOW_STEP_MESSAGES[state.currentStep] ?? WORKFLOW_STEP_MESSAGES.translating;
+      WORKFLOW_STEP_MESSAGES[state.currentStep] ?? WORKFLOW_STEP_MESSAGES.preparing;
     washStatusEl.textContent = message;
     if (state.currentStep === "formatting") {
       formattedStatusEl.textContent = "正在生成排版…";
@@ -211,8 +209,8 @@ function renderFormatted(formatted) {
   formattedState = formatted ?? null;
   if (!formatted || !formatted.html) {
     formattedStatusEl.textContent = translationState?.status === "working"
-      ? "翻译完成后将自动排版"
-      : "等待翻译完成";
+      ? "正文整理完成后将自动排版"
+      : "等待正文整理完成";
     formattedPreviewEl.innerHTML = "暂无排版结果";
     updateFormattedButtons();
     setWechatIdleStatus();
@@ -260,7 +258,7 @@ function setWechatIdleStatus() {
     return;
   }
   if (!formattedState?.html) {
-    wechatStatusEl.textContent = hasApiKey ? "等待翻译完成" : "请先完成翻译";
+    wechatStatusEl.textContent = "请先完成正文整理";
     return;
   }
   if (!wechatHasCredentials) {
@@ -404,18 +402,6 @@ function requestHistory() {
 }
 
 function applySettings(settings) {
-  hasApiKey = Boolean(settings?.hasApiKey);
-  if (!hasApiKey) {
-    translationStatusEl.textContent = "请先配置 API Key";
-    titleStatusEl.textContent = "请先配置 API Key";
-  } else {
-    if (!translationState) {
-      translationStatusEl.textContent = "等待任务开始";
-    }
-    if (!titleState) {
-      titleStatusEl.textContent = "等待任务开始";
-    }
-  }
   wechatHasCredentials = Boolean(settings?.wechatHasCredentials);
   wechatHasToken = Boolean(settings?.wechatConfigured);
   wechatTokenExpiresAt = settings?.wechatTokenExpiresAt || null;
@@ -424,9 +410,7 @@ function applySettings(settings) {
     setWechatIdleStatus();
   }
   if (!workflowState) {
-    washStatusEl.textContent = hasApiKey
-      ? WORKFLOW_STEP_MESSAGES.idle
-      : "请先配置 API Key 后再开始";
+    washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
   }
 }
 
@@ -502,12 +486,6 @@ copyMarkdownBtn.addEventListener("click", () => {
 });
 
 function startWashWorkflow() {
-  if (!hasApiKey) {
-    if (confirm("尚未配置 API Key，是否前往设置？")) {
-      chrome.runtime.openOptionsPage();
-    }
-    return;
-  }
   renderWorkflow({ status: "running", currentStep: "extracting" });
   renderTranslation({ status: "working", text: "" });
   renderTitle({ status: "working", text: "" });
@@ -587,7 +565,7 @@ downloadMarkdownBtn.addEventListener("click", () => {
 
 wechatCreateBtn.addEventListener("click", () => {
   if (!formattedState?.html) {
-    alert("请先完成翻译与排版");
+    alert("请先完成正文整理与排版");
     return;
   }
   if (!lastSourceUrl) {

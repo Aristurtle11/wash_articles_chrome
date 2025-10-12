@@ -1,50 +1,29 @@
-# 阶段二：翻译与排版需求分析
+# 阶段二：正文整理与排版方案
 
-## 现有 Python 实现梳理
-- `wash_articles/src/ai/translator.py`: 使用 Google Gemini 客户端，将提取出来的段落文本按文件翻译成中文，核心逻辑包括 prompt 模板和输出文件写入。
-- `wash_articles/src/ai/formatter.py`: 在翻译结果基础上生成简单的 HTML，重点是使用 AI Prompt 将段落与标题排版成适合微信公众号的结构，并在 postprocess 中移除多余空格。
-- 相关配置均通过 `load_config()` 获取路径、模型、提示词等参数，流程分为「原文 → 翻译文本 → HTML 排版」三步。
+## Python 参考梳理
+- `wash_articles/src/ai/formatter.py`：基于抽取结果生成 HTML，强调段落、标题与图片的排版样式。
+- `wash_articles/src/spiders/...`：爬虫阶段输出的结构化条目（heading/paragraph/image）为后续整合提供原材料。
+- 结论：阶段二不再依赖外部翻译服务，而是围绕「已有结构化条目 → 生成正文文本 → 渲染排版」展开。
 
 ## Chrome 插件目标拆分
-1. **翻译能力**
-   - 直接在 Service Worker 中集成 `@google/genai`，使用 Gemini 模型完成英文 → 中文翻译；API Key 由用户配置，保存在 `chrome.storage.sync`。
-   - 支持按段落批量翻译，并缓存译文以利于排版与导出。
+1. **正文整理**
+   - 在 Service Worker 中将提取到的 `items` 统一整理成 Markdown 风格的文本：标题转 `##`、段落保持原文、图片输出 `{{[Image n]}}` 占位符。
+   - 便于排版模块和历史记录重用，执行完毕后写入 `translation` 字段（现表示“整理后的正文”）。
 2. **排版生成**
-   - 目标输出：富文本（HTML/Markdown）+ 结构化内容（供后续 WeChat 上传使用）。  
-   - 可参考 Formatter 的提示词，或改写为前端模板：按照段落、标题、图片顺序渲染；自动插入占位图、引用等元素。
-   - 需要可视化预览区域，允许用户微调（例如手动编辑标题、删除段落）。
-3. **导出/交互**
-   - 支持导出 Markdown/HTML 文本、复制到剪贴板。  
-   - 将翻译与排版结果写入历史记录，以便复用。
+   - 使用前端模板（`FormatterService`）渲染 HTML，保持微信公众号友好的样式配置。
+   - 排版阶段从整理文本解析块结构，匹配缓存图片并填入上传后的远程链接。
+3. **导出 / 交互**
+   - Popup 提供 HTML 复制、导出和历史记录浏览。
+   - 推荐标题基于原页面标题或正文首段自动生成，同时允许用户手动调整。
 
-## 技术路径建议
-- **翻译实现**：  
-  - 引入 `@google/genai`，在 Service Worker 中创建 `GoogleGenAI` 客户端：  
-    ```js
-    import { GoogleGenAI } from "@google/genai";
-    const client = new GoogleGenAI({ apiKey });
-    const response = await client.models.generateContent({
-      model: "gemini-2.5-pro",
-      contents: [{ role: "user", parts: [{ text }] }],
-    });
-    const output = response.text();
-    ```  
-  - 为扩展添加 `https://generativelanguage.googleapis.com/*` host 权限，处理请求失败、限流和重试。
-- **状态管理**：  
-  - 继续使用 `ContentStore` + `chrome.storage.local`，扩展字段：`translation.status`（idle/working/done）、`translation.text`、`formatted.html/markdown`。  
-  - 提供 API Key 持久化与安全处理（`chrome.storage.sync` + runtime 通道）。
-- **UI**：  
-  - Popup 内新增页签或侧边栏：  
-    - 原文区：显示提取的段落。  
-    - 翻译区：显示译文、进度和错误信息。  
-    - 排版区：渲染 HTML 预览，提供导出/复制按钮。  
-  - 额外提供设置页（Options Page）让用户输入/更新 Gemini API Key。
+## 技术路径要点
+- **内容整理逻辑**：新增 `buildArticleText` 辅助函数，避免丢失原始结构；流程仅依赖本地数据，确保无网络请求。
+- **状态管理**：沿用 `ContentStore`，`translation.status` 取值为 `working/done/error`，但含义改为“正文整理阶段”；标题信息存于 `titleTask`。
+- **UI 更新**：Popup 中的提示与按钮文案统一改为“正文整理”；设置页移除 Gemini API Key 配置，仅保留公众号相关选项。
+- **测试**：维持 Vitest 套件，对整理 → 排版 → 上传等链路进行单元与组件测试；新增场景覆盖整理失败时的回退逻辑。
 
-## 下一步（阶段二实施步骤草案）
-1. **配置管理**：构建 API Key 输入与存储逻辑（Options + Popup 提示），后台可读取配置。
-2. **翻译执行**：封装 Gemini 翻译服务，支持批量段落翻译、进度播报、错误重试，并写入 `ContentStore` 与历史记录。
-3. **排版渲染**：实现基于译文的模板渲染器；必要时调用 Gemini 优化段落；生成 HTML/Markdown 供预览与导出。
-4. **流程整合**：在 Popup 中串联“提取→翻译→排版”，用户可复制/导出结果，历史记录同步译文与排版内容。
-5. **测试计划**：为翻译服务编写单元测试（mock Gemini 客户端），并手动验证整条流程。
-
-完成以上分析后，可依据草案进入具体开发。
+## 后续工作拆解
+1. 编写正文整理函数并串联到工作流，生成默认标题与文本。
+2. 调整排版与 WeChat 上传流程，使用整理结果驱动 HTML/Draft 生成。
+3. 更新 Popup 文案、按钮状态与设置页；清理无用的 Gemini 依赖。
+4. 补充单元测试与端到端手册，验证无网络情况下的完整流程。
