@@ -647,9 +647,6 @@ function handleRuntimeMessage(message) {
     }
     if (Array.isArray(message.payload.wechatUploads) && message.payload.wechatUploads.length) {
       wechatHasToken = true;
-      if (lastSourceUrl) {
-        requestImages(lastSourceUrl);
-      }
     }
     if (message.payload.wechatDraft) {
       wechatDraftState = message.payload.wechatDraft;
