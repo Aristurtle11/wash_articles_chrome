@@ -4,14 +4,17 @@ const TRANSLATION_CONFIG = {
   temperature: 0.3,
   topP: 0.8,
   maxOutputTokens: 65536,
+  thinkingConfig: {
+    thinkingBudget: 0,
+  },
 };
 const TITLE_CONFIG = {
   temperature: 0.6,
   topP: 0.9,
   maxOutputTokens: 1024,
-};
-const THINKING_CONFIG = {
-  thinkingBudget: 0,
+  thinkingConfig: {
+    thinkingBudget: 0,
+  },
 };
 
 function log(...args) {
@@ -112,7 +115,11 @@ export class TranslatorService {
   constructor({ fetchImpl } = {}) {
     this._apiKey = "";
     this._model = DEFAULT_MODEL;
-    this._fetch = fetchImpl || fetch;
+    if (typeof fetchImpl === "function") {
+      this._fetch = fetchImpl;
+    } else {
+      this._fetch = (...args) => globalThis.fetch(...args);
+    }
   }
 
   updateSettings(settings = {}) {
@@ -150,7 +157,6 @@ export class TranslatorService {
     const response = await this._callGeminiRequest({
       contents: [userMessage],
       generationConfig: TRANSLATION_CONFIG,
-      thinkingConfig: THINKING_CONFIG,
     });
 
     const finishReason = extractFinishReason(response);
@@ -195,7 +201,6 @@ export class TranslatorService {
     const response = await this._callGeminiRequest({
       contents,
       generationConfig: TITLE_CONFIG,
-      thinkingConfig: THINKING_CONFIG,
     });
 
     const finishReason = extractFinishReason(response);
