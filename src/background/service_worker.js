@@ -10,7 +10,7 @@ import {
   loadHistory,
   clearHistory,
 } from "./storage.js";
-import { TranslatorService } from "./translator.js";
+import { TranslatorService, sanitizeTitle } from "./translator.js";
 import { FormatterService } from "./formatter.js";
 import { uploadImagesForWeChat, createWeChatDraft } from "./wechat_service.js";
 import {
@@ -502,26 +502,19 @@ async function startWashPipeline(tabId) {
 }
 
 async function runAiTasks(tabId) {
-  const current = store.get(tabId);
-  if (!current || !Array.isArray(current.items) || current.items.length === 0) {
+  const currentSnapshot = store.get(tabId);
+  if (!currentSnapshot || !Array.isArray(currentSnapshot.items) || currentSnapshot.items.length === 0) {
     throw new WorkflowError("extracting", "未找到可处理的正文内容");
   }
 
   setWorkflowStep(tabId, "translating", "running");
-  setWorkflowStep(tabId, "title", "running", {}, { updateCurrent: false });
 
   store.update(tabId, (entry = {}) => ({
     ...entry,
     translation: {
       status: "working",
-      text: entry.translation?.text ?? "",
+      text: "",
       model: translator.settings.model,
-      updatedAt: new Date().toISOString(),
-      error: null,
-    },
-    titleTask: {
-      status: "working",
-      text: entry.titleTask?.text ?? "",
       updatedAt: new Date().toISOString(),
       error: null,
     },
@@ -529,78 +522,102 @@ async function runAiTasks(tabId) {
   }));
   await emitTranslationUpdate(tabId);
 
-  const translationPromise = (async () => {
-    try {
-      const result = await translator.translateContent(current.items, {
-        sourceUrl: current.sourceUrl,
-        title: current.title,
-      });
-      store.update(tabId, (entry = {}) => ({
-        ...entry,
-        translation: {
-          status: "done",
-          text: result.text,
-          model: result.model,
-          updatedAt: result.updatedAt,
-          error: null,
-        },
-      }));
-      setWorkflowStep(tabId, "translating", "done");
-      setWorkflowCurrentStep(tabId, "title");
-      await syncHistoryEntry(tabId);
-      await emitTranslationUpdate(tabId);
-    } catch (error) {
-      const message = error?.message ?? String(error);
-      store.update(tabId, (entry = {}) => ({
-        ...entry,
-        translation: {
-          status: "error",
-          text: entry.translation?.text ?? "",
-          model: translator.settings.model,
-          updatedAt: new Date().toISOString(),
-          error: message,
-        },
-      }));
-      await emitTranslationUpdate(tabId);
-      throw new WorkflowError("translating", message, error);
-    }
-  })();
+  let translationResult;
+  try {
+    translationResult = await translator.translateContent(currentSnapshot.items, {
+      sourceUrl: currentSnapshot.sourceUrl,
+      title: currentSnapshot.title,
+    });
+    log("翻译阶段完成", {
+      tabId,
+      chars: translationResult.text.length,
+      model: translationResult.model,
+    });
+  } catch (error) {
+    const message = error?.message ?? String(error);
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      translation: {
+        status: "error",
+        text: entry.translation?.text ?? "",
+        model: translator.settings.model,
+        updatedAt: new Date().toISOString(),
+        error: message,
+      },
+    }));
+    await emitTranslationUpdate(tabId);
+    throw new WorkflowError("translating", message, error);
+  }
 
-  const titlePromise = (async () => {
-    try {
-      const titleResult = await translator.generateTitle(current.items, {
-        sourceUrl: current.sourceUrl,
-        fallbackTitle: current.title,
-      });
-      store.update(tabId, (entry = {}) => ({
-        ...entry,
-        titleTask: {
-          status: "done",
-          text: titleResult.text,
-          updatedAt: titleResult.updatedAt,
-          error: null,
-        },
-      }));
-      setWorkflowStep(tabId, "title", "done");
-      await emitTranslationUpdate(tabId);
-    } catch (error) {
-      const message = error?.message ?? String(error);
-      const fallbackText = current.title || deriveDefaultTitle(store.get(tabId));
-      store.update(tabId, (entry = {}) => ({
-        ...entry,
-        titleTask: {
-          status: "error",
-          text: fallbackText,
-          updatedAt: new Date().toISOString(),
-          error: message,
-        },
-      }));
-      setWorkflowStep(tabId, "title", "done", { error: message }, { updateCurrent: false });
-      await emitTranslationUpdate(tabId);
-    }
-  })();
+  store.update(tabId, (entry = {}) => ({
+    ...entry,
+    translation: {
+      status: "done",
+      text: translationResult.text,
+      model: translationResult.model,
+      updatedAt: translationResult.updatedAt,
+      error: null,
+    },
+  }));
+  setWorkflowStep(tabId, "translating", "done");
+  setWorkflowCurrentStep(tabId, "title");
+  await syncHistoryEntry(tabId);
+  await emitTranslationUpdate(tabId);
 
-  await Promise.all([translationPromise, titlePromise]);
+  setWorkflowStep(tabId, "title", "running", {}, { updateCurrent: false });
+  store.update(tabId, (entry = {}) => ({
+    ...entry,
+    titleTask: {
+      status: "working",
+      text: entry.titleTask?.text ?? "",
+      updatedAt: new Date().toISOString(),
+      error: null,
+    },
+  }));
+  await emitTranslationUpdate(tabId);
+
+  try {
+    const titleResult = await translator.generateTitle(currentSnapshot.items, {
+      sourceUrl: currentSnapshot.sourceUrl,
+      fallbackTitle: currentSnapshot.title,
+      translatedText: translationResult.text,
+    });
+    log("标题生成成功", {
+      tabId,
+      title: titleResult.text,
+    });
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      titleTask: {
+        status: "done",
+        text: titleResult.text,
+        updatedAt: titleResult.updatedAt,
+        error: null,
+      },
+    }));
+    setWorkflowStep(tabId, "title", "done");
+  } catch (error) {
+    const message = error?.message ?? String(error);
+    const fallbackBase = currentSnapshot.title || deriveDefaultTitle({ translation: { text: translationResult.text } });
+    const fallbackText = sanitizeTitle(fallbackBase) || "待确认标题";
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      titleTask: {
+        status: "done",
+        text: fallbackText,
+        updatedAt: new Date().toISOString(),
+        warning: message,
+      },
+    }));
+    log("标题生成失败，使用备用标题", {
+      tabId,
+      fallback: fallbackText,
+      error: message,
+    });
+    setWorkflowStep(tabId, "title", "done", { warning: message }, { updateCurrent: false });
+  }
+
+  await emitTranslationUpdate(tabId);
   setWorkflowCurrentStep(tabId, "uploading");
 }
 
@@ -691,8 +708,9 @@ async function runPublishStage(tabId, context) {
   }
 
   try {
+    const resolvedTitle = sanitizeTitle(current.titleTask?.text || deriveDefaultTitle(current)) || "待确认标题";
     const metadata = {
-      title: current.titleTask?.text || deriveDefaultTitle(current),
+      title: resolvedTitle,
       author: currentSettings.wechatDefaultAuthor || "",
       digest: buildDigestFromTranslation(current.translation?.text || ""),
       sourceUrl: currentSettings.wechatOriginUrl || current.sourceUrl || "",
@@ -1043,6 +1061,7 @@ function buildHistoryEntry(payload, images) {
           text: payload.titleTask.text,
           updatedAt: payload.titleTask.updatedAt,
           error: payload.titleTask.error ?? null,
+          warning: payload.titleTask.warning ?? null,
         }
       : null,
     translation: payload?.translation

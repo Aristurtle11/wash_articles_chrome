@@ -24,7 +24,7 @@
     import { GoogleGenAI } from "@google/genai";
     const client = new GoogleGenAI({ apiKey });
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-2.5-pro",
       contents: [{ role: "user", parts: [{ text }] }],
     });
     const output = response.text();

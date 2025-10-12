@@ -1,7 +1,7 @@
 export const SETTINGS_KEY = "wash_articles_settings";
 export const DEFAULT_SETTINGS = {
   apiKey: "",
-  model: "gemini-2.5-flash",
+  model: "gemini-2.5-pro",
   updatedAt: null,
   wechatAppId: "",
   wechatAppSecret: "",

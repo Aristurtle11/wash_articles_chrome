@@ -2,21 +2,36 @@ import { DEFAULT_SETTINGS, normalizeSettings } from "../shared/settings.js";
 
 const API_HOST = "https://generativelanguage.googleapis.com";
 const API_PATH = "v1beta";
-const TRANSLATE_SYSTEM_PROMPT = `你是一名专业翻译，请将输入的英文文章内容翻译成流畅、自然的中文。\n要求：\n- 保留段落和小标题结构，按照顺序输出。\n- 不要添加额外说明或前缀，仅输出翻译后的正文。\n- 如果出现图片占位符 (如 {{[Image]}} 或 {{[Image 1]}} )，原样保留。`;
-const TITLE_SYSTEM_PROMPT = `你是一名资深中文新闻编辑，请基于给定的英文文章内容，提炼一个不超过 22 个汉字的中文标题。\n要求：\n- 使用简体中文。\n- 精炼、准确，突出核心信息。\n- 不要包含引号或标点符号结尾。`;
+
+const TRANSLATE_INSTRUCTION = `你是一名专业翻译，请将输入的英文文章内容翻译成流畅、自然的中文。
+要求：
+- 保留段落和小标题结构，按照顺序输出。
+- 不要添加额外说明或前缀，仅输出翻译后的正文。
+- 如果出现图片占位符 (如 {{[Image]}} 或 {{[Image 1]}} )，原样保留。`;
+
+const TITLE_INSTRUCTION = `请基于我们刚刚讨论的中文译文，为文章拟一个中文标题。
+要求：
+- 使用简体中文，不超过 22 个汉字；
+- 精炼准确，突出核心信息；
+- 不添加书名号、引号或标点符号结尾。
+请直接输出标题本身。`;
+
 const DEFAULT_GENERATION_CONFIG = {
   temperature: 0.2,
   topK: 32,
   topP: 0.9,
-  maxOutputTokens: 2048,
+  maxOutputTokens: 65536,
 };
+
 const TITLE_GENERATION_CONFIG = {
   temperature: 0.4,
   topK: 32,
   topP: 0.9,
-  maxOutputTokens: 128,
+  maxOutputTokens: 512,
 };
-const MAX_CHUNK_CHARS = 1800;
+
+const MAX_CHUNK_CHARS = 1200;
+const MAX_CONTEXT_CHARS = 20000;
 
 export class TranslatorService {
   constructor() {
@@ -24,14 +39,15 @@ export class TranslatorService {
   }
 
   updateSettings(rawSettings) {
-    this._settings = normalizeSettings(rawSettings);
+    const normalized = normalizeSettings(rawSettings);
+    this._settings = { ...normalized, model: DEFAULT_SETTINGS.model };
   }
 
   get settings() {
     return { ...this._settings };
   }
 
-  async translateContent(items, { sourceUrl, title } = {}) {
+  async translateContent(items, metadata = {}) {
     if (!this._settings.apiKey) {
       throw new Error("尚未配置 Gemini API Key");
     }
@@ -41,76 +57,136 @@ export class TranslatorService {
 
     const serialized = serializeItems(items);
     const chunkTexts = chunkSegments(serialized, MAX_CHUNK_CHARS);
-    const responses = [];
+    const translations = [];
 
     for (let index = 0; index < chunkTexts.length; index += 1) {
-      const prompt = buildPrompt(chunkTexts[index], { sourceUrl, title }, index + 1, chunkTexts.length);
+      console.debug("[Translator] 翻译 chunk", {
+        chunk: index + 1,
+        total: chunkTexts.length,
+        size: chunkTexts[index].length,
+      });
+      const userMessage = buildTranslationUserMessage(
+        chunkTexts[index],
+        metadata,
+        index + 1,
+        chunkTexts.length,
+      );
       const response = await this._callGeminiRequest({
-        systemPrompt: TRANSLATE_SYSTEM_PROMPT,
-        userPrompt: prompt,
+        contents: [userMessage],
         generationConfig: DEFAULT_GENERATION_CONFIG,
       });
-      responses.push(response);
+      console.debug("[Translator] 翻译返回", {
+        chunk: index + 1,
+        finishReason: extractFinishReason(response) || "unknown",
+      });
+      const text = normalizeResponseText(response);
+      if (!text) {
+        const block = extractBlockReason(response);
+        if (block) {
+          throw new Error(`Gemini 拒绝翻译：${block}`);
+        }
+        const finishReason = extractFinishReason(response);
+        throw new Error(
+          finishReason
+            ? `Gemini 未返回翻译结果 (finishReason=${finishReason})`
+            : "Gemini 未返回翻译结果",
+        );
+      }
+      translations.push(text.trim());
     }
 
-    const results = responses.map((response) => {
-      const text = normalizeResponseText(response);
-      if (text) {
-        return text.trim();
-      }
-      const block = extractBlockReason(response);
-      if (block) {
-        throw new Error(`Gemini 拒绝翻译：${block}`);
-      }
-      const finishReason = extractFinishReason(response);
-      console.warn("[WashArticles] Gemini 响应为空", response);
-      throw new Error(
-        finishReason
-          ? `Gemini 未返回翻译结果 (finishReason=${finishReason})`
-          : "Gemini 未返回翻译结果",
-      );
-    });
+    const translationText = translations.join("\n\n");
+    const conversation = buildTranslationConversation(items, metadata, translationText);
 
     return {
-      text: results.join("\n\n"),
+      text: translationText,
       model: this._settings.model,
       updatedAt: new Date().toISOString(),
+      conversation,
     };
   }
 
-  async generateTitle(items, { sourceUrl, fallbackTitle } = {}) {
+  async generateTitle(items, { sourceUrl, fallbackTitle, conversation, translatedText } = {}) {
     if (!this._settings.apiKey) {
       throw new Error("尚未配置 Gemini API Key");
     }
-    const englishMaterial = buildTitleMaterial(items);
-    if (!englishMaterial) {
+
+    const hasTranslatedText = typeof translatedText === "string" && translatedText.trim().length > 0;
+    if (!hasTranslatedText) {
       if (fallbackTitle) {
+        console.debug("[Translator] 翻译内容缺失，返回备用标题", fallbackTitle);
         return {
-          text: fallbackTitle,
+          text: sanitizeTitle(fallbackTitle),
           updatedAt: new Date().toISOString(),
         };
       }
-      throw new Error("没有可生成标题的内容");
+      throw new Error("缺少可用于生成标题的中文内容");
     }
 
-    const prompt = buildTitlePrompt(englishMaterial, { sourceUrl, fallbackTitle });
+    const history = normalizeConversation(conversation, translatedText);
+    const titleMessage = buildTitleUserMessage({ sourceUrl, fallbackTitle });
+    const contents = [...history, titleMessage];
+
+    console.debug("[Translator] 请求标题生成", {
+      turns: contents.length,
+      lastUserPreview: titleMessage.parts[0].text.slice(0, 200),
+    });
+
     const response = await this._callGeminiRequest({
-      systemPrompt: TITLE_SYSTEM_PROMPT,
-      userPrompt: prompt,
+      contents,
       generationConfig: TITLE_GENERATION_CONFIG,
     });
+
     const text = normalizeResponseText(response).split(/\r?\n/)[0]?.trim();
+    console.debug("[Translator] 标题生成响应", {
+      hasText: Boolean(text),
+      finishReason: extractFinishReason(response) || "unknown",
+    });
     if (!text) {
       throw new Error("Gemini 未返回标题");
     }
-    const normalized = sanitizeTitle(text) || fallbackTitle || "待确认标题";
+    const normalized = sanitizeTitle(text) || sanitizeTitle(fallbackTitle) || "待确认标题";
     return {
       text: normalized,
       updatedAt: new Date().toISOString(),
     };
   }
 
-  async _callGeminiRequest({ systemPrompt, userPrompt, generationConfig }) {
+  async _callGeminiRequest({ contents, generationConfig }) {
+    if (!Array.isArray(contents) || !contents.length) {
+      throw new Error("缺少会话内容");
+    }
+
+    const prepared = contents
+      .map((entry) => {
+        if (!entry || !Array.isArray(entry.parts)) {
+          return null;
+        }
+        const parts = entry.parts
+          .map((part) => {
+            if (typeof part === "string") {
+              return { text: part };
+            }
+            if (typeof part?.text === "string") {
+              return { text: part.text };
+            }
+            return null;
+          })
+          .filter(Boolean);
+        if (!parts.length) {
+          return null;
+        }
+        return {
+          role: entry.role === "model" ? "model" : "user",
+          parts,
+        };
+      })
+      .filter(Boolean);
+
+    if (!prepared.length) {
+      throw new Error("缺少有效的会话内容");
+    }
+
     const model = this._settings.model || DEFAULT_SETTINGS.model;
     const endpoint = new URL(
       `${API_PATH}/models/${encodeURIComponent(model)}:generateContent`,
@@ -119,12 +195,7 @@ export class TranslatorService {
     endpoint.searchParams.set("key", this._settings.apiKey);
 
     const body = {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-        },
-      ],
+      contents: prepared,
       generationConfig: generationConfig || DEFAULT_GENERATION_CONFIG,
     };
 
@@ -135,6 +206,12 @@ export class TranslatorService {
       },
       body: JSON.stringify(body),
     });
+    console.debug("[Translator] 调用 Gemini", {
+      model,
+      contentTurns: prepared.length,
+      generationConfig,
+      status: response.status,
+    });
 
     if (!response.ok) {
       const errorBody = await safeJson(response);
@@ -144,6 +221,18 @@ export class TranslatorService {
 
     return response.json();
   }
+}
+
+export function sanitizeTitle(title) {
+  if (!title) return "";
+  const cleaned = String(title)
+    .replace(/[“”"'<>\u300a\u300b《》]/g, "")
+    .replace(/\s+/g, " ")
+    .replace(/[。！？!?、,.，；;:：]+$/u, "")
+    .trim();
+  if (!cleaned) return "";
+  const chars = Array.from(cleaned);
+  return chars.slice(0, 22).join("");
 }
 
 function serializeItems(items) {
@@ -188,65 +277,87 @@ function chunkSegments(segments, limit) {
   return chunks;
 }
 
-function buildPrompt(chunkText, { sourceUrl, title } = {}, chunkIndex = 1, chunkTotal = 1) {
+function buildTranslationUserMessage(chunkText, metadata, chunkIndex, chunkTotal) {
+  const prompt = buildTranslationPrompt(chunkText, metadata, chunkIndex, chunkTotal);
+  return {
+    role: "user",
+    parts: [{ text: `${TRANSLATE_INSTRUCTION}\n\n${prompt}` }],
+  };
+}
+
+function buildTranslationPrompt(chunkText, { sourceUrl, title } = {}, chunkIndex = 1, chunkTotal = 1) {
   const lines = [];
   if (title) {
-    lines.push(`# Title: ${title}`);
+    lines.push(`# 原文标题: ${title}`);
   }
   if (sourceUrl) {
-    lines.push(`# Source: ${sourceUrl}`);
+    lines.push(`# 原文链接: ${sourceUrl}`);
   }
   if (chunkTotal > 1) {
-    lines.push(`# Segment: ${chunkIndex}/${chunkTotal}`);
+    lines.push(`# 当前片段: ${chunkIndex}/${chunkTotal}`);
   }
-  lines.push("\n正文内容如下：\n");
+  lines.push("\n以下是需要翻译的英文内容：\n");
   lines.push(chunkText);
   return lines.join("\n");
 }
 
-function buildTitleMaterial(items, limit = 1600) {
-  if (!Array.isArray(items) || !items.length) {
-    return "";
-  }
-  const parts = [];
-  for (const item of items) {
-    if (!item || typeof item !== "object") continue;
-    if (item.kind === "heading" && item.text) {
-      parts.push(String(item.text));
-    } else if (item.kind === "paragraph" && item.text) {
-      parts.push(String(item.text));
-    }
-    if (parts.join("\n").length >= limit) {
-      break;
-    }
-  }
-  const text = parts.join("\n").trim();
-  return text.slice(0, limit);
+function buildTranslationConversation(items, metadata, translationText) {
+  const english = truncateText(serializeItems(items).join("\n\n"), MAX_CONTEXT_CHARS);
+  const userMessage = buildTranslationUserMessage(english, metadata, 1, 1);
+  const modelMessage = {
+    role: "model",
+    parts: [{ text: translationText || "" }],
+  };
+  return [userMessage, modelMessage];
 }
 
-function buildTitlePrompt(englishText, { sourceUrl, fallbackTitle } = {}) {
-  const lines = [];
+function buildTitleUserMessage({ sourceUrl, fallbackTitle }) {
+  const lines = [TITLE_INSTRUCTION];
   if (fallbackTitle) {
-    lines.push(`原文标题: ${fallbackTitle}`);
+    lines.push(`原文标题（仅供参考）：${fallbackTitle}`);
   }
   if (sourceUrl) {
-    lines.push(`Source: ${sourceUrl}`);
+    lines.push(`原文链接：${sourceUrl}`);
   }
-  lines.push("请根据以下英文内容生成一个简洁的中文标题：");
-  lines.push(englishText);
-  return lines.join("\n\n");
+  lines.push("请基于前一步的中文译文直接输出标题。");
+  return {
+    role: "user",
+    parts: [{ text: lines.join("\n") }],
+  };
 }
 
-function sanitizeTitle(title) {
-  if (!title) return "";
-  const cleaned = title
-    .replace(/[“”"']/g, "")
-    .replace(/[\s]+/g, " ")
-    .replace(/[。！？!?]+$/u, "")
-    .trim();
-  const chars = Array.from(cleaned);
-  const truncated = chars.slice(0, 22).join("");
-  return truncated;
+function normalizeConversation(conversation, translatedText) {
+  if (Array.isArray(conversation) && conversation.length) {
+    const normalized = conversation
+      .map((entry) => {
+        const role = entry?.role === "model" ? "model" : "user";
+        const parts = Array.isArray(entry?.parts)
+          ? entry.parts
+              .map((part) => {
+                if (typeof part === "string") return { text: part };
+                if (typeof part?.text === "string") return { text: part.text };
+                return null;
+              })
+              .filter(Boolean)
+          : [];
+        if (!parts.length) return null;
+        return { role, parts };
+      })
+      .filter(Boolean);
+    const hasModel = normalized.some((entry) => entry.role === "model");
+    if (normalized.length && hasModel) {
+      return normalized;
+    }
+  }
+  const fallbackText = translatedText ? translatedText : "";
+  return buildTranslationConversation([], {}, fallbackText);
+}
+
+function truncateText(text, limit) {
+  if (!text || text.length <= limit) {
+    return text || "";
+  }
+  return `${text.slice(0, limit)}\n...[内容已截断供模型参考]`;
 }
 
 function normalizeResponseText(response) {
@@ -278,7 +389,7 @@ function normalizeResponseText(response) {
 async function safeJson(response) {
   try {
     return await response.json();
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -299,6 +410,7 @@ function extractTextFromParts(parts) {
         try {
           return atob(part.inlineData.data);
         } catch (error) {
+          console.warn("[WashArticles] 解码 inlineData 失败", error);
           return "";
         }
       }

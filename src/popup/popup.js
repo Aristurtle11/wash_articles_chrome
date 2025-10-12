@@ -147,9 +147,13 @@ function renderTitle(titleTask) {
   } else if (titleTask.status === "error") {
     titleStatusEl.textContent = `标题生成失败：${titleTask.error || "未知错误"}`;
   } else {
-    titleStatusEl.textContent = titleTask.updatedAt
-      ? `标题生成完成：${formatDate(titleTask.updatedAt)}`
-      : "标题生成完成";
+    if (titleTask.warning) {
+      titleStatusEl.textContent = `标题已生成（使用备用方案）：${titleTask.warning}`;
+    } else {
+      titleStatusEl.textContent = titleTask.updatedAt
+        ? `标题生成完成：${formatDate(titleTask.updatedAt)}`
+        : "标题生成完成";
+    }
   }
   generatedTitleInput.value = titleTask.text || "";
 }

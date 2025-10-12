@@ -22,7 +22,7 @@ async function loadSettings() {
     const current = normalizeSettings(result[SETTINGS_KEY]);
 
     apiKeyInput.value = current.apiKey;
-    modelInput.value = current.model || DEFAULT_SETTINGS.model;
+    modelInput.value = DEFAULT_SETTINGS.model;
     statusEl.textContent = current.updatedAt ? `最近更新：${formatDate(current.updatedAt)}` : "";
     statusEl.classList.remove("error");
 
@@ -91,7 +91,7 @@ function refreshWechatToken(forceRefresh) {
 async function saveTranslatorSettings(event) {
   event.preventDefault();
   const apiKey = apiKeyInput.value.trim();
-  const model = modelInput.value.trim() || DEFAULT_SETTINGS.model;
+  const model = DEFAULT_SETTINGS.model;
   try {
     const result = await chrome.storage.sync.get(SETTINGS_KEY);
     const current = normalizeSettings(result[SETTINGS_KEY]);

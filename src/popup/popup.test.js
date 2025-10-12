@@ -82,7 +82,7 @@ describe("popup UI", () => {
               response = {
                 settings: {
                   hasApiKey: true,
-                  model: "gemini-2.5-flash",
+                  model: "gemini-2.5-pro",
                   maskedKey: "••••",
                   updatedAt: "2025-01-01T00:00:00Z",
                 },

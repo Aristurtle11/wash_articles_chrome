@@ -13,7 +13,7 @@ function createResponse({ text, blockReason, finishReason } = {}) {
     {
       finishReason,
       content: text
-        ? { parts: [{ text }] }
+        ? { role: "model", parts: [{ text }] }
         : {},
     },
   ];
@@ -61,6 +61,9 @@ describe("TranslatorService", () => {
 
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(result.text).toContain("测试输出");
+    expect(Array.isArray(result.conversation)).toBe(true);
+    expect(result.conversation).toHaveLength(2);
+    expect(result.conversation[1].parts[0].text).toContain("测试输出");
   });
 
   it("throws with block reason", async () => {
@@ -99,6 +102,7 @@ describe("TranslatorService", () => {
     const result = await translator.generateTitle(SAMPLE_ITEMS, {
       sourceUrl: "https://example.com",
       fallbackTitle: "Fallback",
+      translatedText: "翻译后的正文",
     });
 
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -109,7 +113,10 @@ describe("TranslatorService", () => {
     const translator = new TranslatorService();
     translator.updateSettings({ apiKey: "fake", model: "gemini-test" });
 
-    const result = await translator.generateTitle([], { fallbackTitle: "默认标题" });
+    const result = await translator.generateTitle([], {
+      fallbackTitle: "默认标题",
+      translatedText: "",
+    });
     expect(result.text).toBe("默认标题");
     expect(fetch).not.toHaveBeenCalled();
   });
