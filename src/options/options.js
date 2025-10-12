@@ -1,5 +1,11 @@
 import { SETTINGS_KEY, DEFAULT_SETTINGS, normalizeSettings } from "../shared/settings.js";
 
+const geminiForm = document.getElementById("gemini-form");
+const geminiApiKeyInput = document.getElementById("geminiApiKey");
+const geminiSaveBtn = document.getElementById("gemini-save");
+const geminiClearBtn = document.getElementById("gemini-clear");
+const geminiStatusEl = document.getElementById("gemini-status");
+
 const wechatForm = document.getElementById("wechat-form");
 const wechatAppIdInput = document.getElementById("wechatAppId");
 const wechatAppSecretInput = document.getElementById("wechatAppSecret");
@@ -15,6 +21,10 @@ async function loadSettings() {
     const result = await chrome.storage.sync.get(SETTINGS_KEY);
     const current = normalizeSettings(result[SETTINGS_KEY]);
 
+    geminiApiKeyInput.value = current.geminiApiKey || "";
+    geminiStatusEl.textContent = buildGeminiStatus(current);
+    geminiStatusEl.classList.remove("error");
+
     wechatAppIdInput.value = current.wechatAppId || "";
     wechatAppSecretInput.value = current.wechatAppSecret || "";
     wechatDefaultAuthorInput.value = current.wechatDefaultAuthor || "";
@@ -24,6 +34,8 @@ async function loadSettings() {
     wechatStatusEl.classList.remove("error");
   } catch (error) {
     const msg = error?.message ?? String(error);
+    geminiStatusEl.textContent = `加载失败：${msg}`;
+    geminiStatusEl.classList.add("error");
     wechatStatusEl.textContent = `加载失败：${msg}`;
     wechatStatusEl.classList.add("error");
   }
@@ -42,6 +54,16 @@ function formatDate(value) {
   return value;
 }
 
+function buildGeminiStatus(settings) {
+  if (!settings) return "尚未配置 Gemini API Key";
+  if (settings.geminiApiKey) {
+    return settings.geminiUpdatedAt
+      ? `Gemini API Key 已配置（更新于 ${formatDate(settings.geminiUpdatedAt)}）`
+      : "Gemini API Key 已配置";
+  }
+  return "尚未配置 Gemini API Key";
+}
+
 function buildWechatStatus(settings) {
   if (!settings) return "尚未配置公众号信息";
   if (!settings.wechatAppId || !settings.wechatAppSecret) {
@@ -54,6 +76,50 @@ function buildWechatStatus(settings) {
     return `Access Token 将于 ${formatDate(settings.wechatTokenExpiresAt)} 过期`;
   }
   return "Access Token 已缓存";
+}
+
+async function saveGeminiSettings(event) {
+  event.preventDefault();
+  const apiKey = geminiApiKeyInput.value.trim();
+  try {
+    geminiStatusEl.textContent = "正在保存配置…";
+    geminiStatusEl.classList.remove("error");
+    const result = await chrome.storage.sync.get(SETTINGS_KEY);
+    const current = normalizeSettings(result[SETTINGS_KEY]);
+    const updated = {
+      ...DEFAULT_SETTINGS,
+      ...current,
+      geminiApiKey: apiKey,
+      geminiModel: DEFAULT_SETTINGS.geminiModel,
+      geminiUpdatedAt: new Date().toISOString(),
+    };
+    await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
+    geminiStatusEl.textContent = apiKey ? "Gemini API Key 已保存" : "Gemini 配置已更新";
+    geminiStatusEl.classList.remove("error");
+    await loadSettings();
+  } catch (error) {
+    geminiStatusEl.textContent = `保存失败：${error?.message ?? error}`;
+    geminiStatusEl.classList.add("error");
+  }
+}
+
+async function clearGeminiSettings() {
+  try {
+    const result = await chrome.storage.sync.get(SETTINGS_KEY);
+    const current = normalizeSettings(result[SETTINGS_KEY]);
+    const updated = {
+      ...current,
+      geminiApiKey: "",
+      geminiUpdatedAt: new Date().toISOString(),
+    };
+    await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
+    geminiApiKeyInput.value = "";
+    geminiStatusEl.textContent = "Gemini 配置已清除";
+    geminiStatusEl.classList.remove("error");
+  } catch (error) {
+    geminiStatusEl.textContent = `清除失败：${error?.message ?? error}`;
+    geminiStatusEl.classList.add("error");
+  }
 }
 
 function refreshWechatToken(forceRefresh) {
@@ -91,8 +157,8 @@ async function saveWechatSettings(event) {
       current.wechatAppId !== appId || current.wechatAppSecret !== appSecret;
     const hadToken = Boolean(current.wechatAccessToken);
     const updated = {
-      ...current,
       ...DEFAULT_SETTINGS,
+      ...current,
       wechatAppId: appId,
       wechatAppSecret: appSecret,
       wechatDefaultAuthor: defaultAuthor,
@@ -156,6 +222,10 @@ async function clearWechatSettings() {
     wechatStatusEl.classList.add("error");
   }
 }
+
+geminiForm.addEventListener("submit", saveGeminiSettings);
+geminiSaveBtn.addEventListener("click", saveGeminiSettings);
+geminiClearBtn.addEventListener("click", clearGeminiSettings);
 
 wechatForm.addEventListener("submit", saveWechatSettings);
 wechatSaveBtn.addEventListener("click", saveWechatSettings);

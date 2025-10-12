@@ -11,6 +11,7 @@ import {
   clearHistory,
 } from "./storage.js";
 import { FormatterService } from "./formatter.js";
+import { TranslatorService } from "./translator.js";
 import { uploadImagesForWeChat, createWeChatDraft } from "./wechat_service.js";
 import {
   SETTINGS_KEY,
@@ -21,6 +22,7 @@ import {
 
 const store = new ContentStore();
 const formatter = new FormatterService();
+const translator = new TranslatorService();
 let currentSettings = { ...DEFAULT_SETTINGS };
 const ports = new Set();
 const activePipelines = new Map();
@@ -502,37 +504,125 @@ async function runPreparationStage(tabId) {
       text: entry.titleTask?.text ?? "",
       updatedAt: new Date().toISOString(),
       error: null,
+      warning: null,
     },
     formatted: null,
   }));
   await emitArticleUpdate(tabId);
 
-  try {
-    const articleText = buildArticleText(currentSnapshot.items);
-    const preparedTitle = sanitizeTitle(
-      derivePreparedTitle(currentSnapshot, articleText),
-    );
-    const completedAt = new Date().toISOString();
-    log("内容整理完成", {
-      tabId,
-      chars: articleText.length,
-    });
+  if (!translator.hasCredentials()) {
+    const message = "请先在设置页配置 Gemini API Key";
     store.update(tabId, (entry = {}) => ({
       ...entry,
       translation: {
-        status: "done",
-        text: articleText,
-        updatedAt: completedAt,
-        error: null,
+        status: "error",
+        text: "",
+        updatedAt: new Date().toISOString(),
+        error: message,
       },
       titleTask: {
-        status: "done",
-        text: preparedTitle,
-        updatedAt: completedAt,
-        warning: null,
-        error: null,
+        status: "error",
+        text: sanitizeTitle(currentSnapshot.title || deriveDefaultTitle(entry)),
+        updatedAt: new Date().toISOString(),
+        warning: message,
+        error: message,
       },
     }));
+    await emitArticleUpdate(tabId);
+    throw new WorkflowError("preparing", message);
+  }
+
+  const sourceMarkdown = buildArticleText(currentSnapshot.items);
+  const fallbackTitle = sanitizeTitle(
+    derivePreparedTitle(currentSnapshot, sourceMarkdown),
+  ) || "待确认标题";
+
+  let translationResult;
+  try {
+    translationResult = await translator.translateArticle(sourceMarkdown, {
+      sourceUrl: currentSnapshot.sourceUrl,
+      fallbackTitle,
+    });
+  } catch (error) {
+    const message = error?.message ?? String(error);
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      translation: {
+        status: "error",
+        text: "",
+        updatedAt: new Date().toISOString(),
+        error: message,
+      },
+      titleTask: {
+        status: "error",
+        text: fallbackTitle,
+        updatedAt: new Date().toISOString(),
+        warning: message,
+        error: message,
+      },
+    }));
+    await emitArticleUpdate(tabId);
+    throw new WorkflowError("preparing", message, error);
+  }
+
+  const translatedText = translationResult?.text ? String(translationResult.text).trim() : "";
+  const translationUpdatedAt = new Date().toISOString();
+  store.update(tabId, (entry = {}) => ({
+    ...entry,
+    translation: {
+      status: "done",
+      text: translatedText,
+      updatedAt: translationUpdatedAt,
+      error: null,
+    },
+  }));
+  await emitArticleUpdate(tabId);
+
+  let titleResult;
+  try {
+    titleResult = await translator.generateTitle(translationResult.conversation, {
+      sourceUrl: currentSnapshot.sourceUrl,
+      fallbackTitle,
+    });
+  } catch (error) {
+    const message = error?.message ?? String(error);
+    store.update(tabId, (entry = {}) => ({
+      ...entry,
+      titleTask: {
+        status: "error",
+        text: fallbackTitle,
+        updatedAt: new Date().toISOString(),
+        warning: message,
+        error: message,
+      },
+    }));
+    await emitArticleUpdate(tabId);
+    throw new WorkflowError("preparing", message, error);
+  }
+
+  const resolvedTitle = sanitizeTitle(titleResult?.text || fallbackTitle) || fallbackTitle;
+  const completedAt = new Date().toISOString();
+  log("内容整理完成", {
+    tabId,
+    chars: translatedText.length,
+  });
+  store.update(tabId, (entry = {}) => ({
+    ...entry,
+    translation: {
+      status: "done",
+      text: translatedText,
+      updatedAt: completedAt,
+      error: null,
+    },
+    titleTask: {
+      status: "done",
+      text: resolvedTitle,
+      updatedAt: completedAt,
+      warning: null,
+      error: null,
+    },
+  }));
+  try {
     setWorkflowStep(tabId, "preparing", "done");
     setWorkflowCurrentStep(tabId, "uploading");
     await syncHistoryEntry(tabId);
@@ -540,15 +630,9 @@ async function runPreparationStage(tabId) {
     const message = error?.message ?? String(error);
     store.update(tabId, (entry = {}) => ({
       ...entry,
-      translation: {
-        status: "error",
-        text: entry.translation?.text ?? "",
-        updatedAt: new Date().toISOString(),
-        error: message,
-      },
       titleTask: {
         status: "error",
-        text: sanitizeTitle(currentSnapshot.title || deriveDefaultTitle(entry)),
+        text: fallbackTitle,
         updatedAt: new Date().toISOString(),
         warning: message,
         error: message,
@@ -877,6 +961,7 @@ async function initializeSettings() {
 async function updateSettings(settings) {
   const previous = currentSettings;
   currentSettings = settings;
+  translator.updateSettings(currentSettings);
   if (skipWeChatAutoRefresh) {
     skipWeChatAutoRefresh = false;
   } else {
@@ -1379,6 +1464,7 @@ async function applySettingsPatch(patch) {
     wechatUpdatedAt: new Date().toISOString(),
   };
   currentSettings = updated;
+  translator.updateSettings(currentSettings);
   try {
     await chrome.storage.sync.set({ [SETTINGS_KEY]: updated });
   } catch (error) {
@@ -1483,5 +1569,7 @@ function sanitizeSettings(settings) {
     wechatUpdatedAt: normalized.wechatUpdatedAt,
     wechatDefaultAuthor: normalized.wechatDefaultAuthor || "",
     wechatOriginUrl: normalized.wechatOriginUrl || "",
+    geminiConfigured: Boolean(normalized.geminiApiKey),
+    geminiUpdatedAt: normalized.geminiUpdatedAt,
   };
 }

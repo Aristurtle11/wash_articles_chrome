@@ -9,6 +9,9 @@ export const DEFAULT_SETTINGS = {
   wechatDefaultAuthor: "",
   wechatOriginUrl: "",
   wechatThumbMediaId: "",
+  geminiApiKey: "",
+  geminiModel: "gemini-2.5-flash",
+  geminiUpdatedAt: null,
 };
 
 export function normalizeSettings(raw) {

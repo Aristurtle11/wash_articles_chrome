@@ -12,7 +12,8 @@
   ],
   "host_permissions": [
     "https://www.realtor.com/news/*",
-    "https://api.weixin.qq.com/*"
+    "https://api.weixin.qq.com/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "background": {
     "service_worker": "src/background/service_worker.js",

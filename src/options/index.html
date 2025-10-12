@@ -86,6 +86,24 @@
   <body>
     <h1>Wash Articles 设置</h1>
     <div class="section">
+      <h2>Gemini 翻译服务</h2>
+      <p class="note">
+        配置 Gemini API Key 后，扩展会通过 Gemini 模型完成正文翻译与标题生成。
+        API Key 将安全保存在浏览器的同步存储中。
+      </p>
+      <form id="gemini-form">
+        <label>
+          API Key
+          <input id="geminiApiKey" type="password" placeholder="例如 AIza..." autocomplete="off" />
+        </label>
+        <div class="actions">
+          <button type="button" id="gemini-save">保存 Gemini 配置</button>
+          <button type="button" id="gemini-clear" class="secondary">清除 Gemini 配置</button>
+          <span id="gemini-status" class="status"></span>
+        </div>
+      </form>
+    </div>
+    <div class="section">
       <h2>微信公众号</h2>
       <p class="note">
         输入公众号的 AppID 与 AppSecret 后，扩展会自动申请 Access Token 并在过期前刷新。
