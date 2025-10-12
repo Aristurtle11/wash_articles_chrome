@@ -939,13 +939,14 @@ async function handleWeChatDraftRequest(tabId, payload) {
     }));
 
     await generateFormattedOutput(tabId, uploads);
+    const refreshed = store.get(tabId);
 
     const draft = await createWeChatDraft(
       {
-        formatted: current.formatted,
-        translation: current.translation,
+        formatted: refreshed?.formatted || current.formatted,
+        translation: refreshed?.translation || current.translation,
         metadata,
-        sourceUrl: current.sourceUrl,
+        sourceUrl: refreshed?.sourceUrl || current.sourceUrl,
       },
       uploads,
       {

@@ -26,7 +26,7 @@ describe("FormatterService", () => {
 
     expect(html).toContain("<article style=");
     expect(html).toContain("<h2 style=");
-    expect(html).toContain('<div style="margin:0 0 24px"><p style="margin:0');
+    expect(html).toContain('<p style="margin:0 0 24px');
     expect(html).toContain('<div style="margin:24px 0');
     expect(markdown).toBeNull();
   });

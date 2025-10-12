@@ -64,7 +64,17 @@ export async function createWeChatDraft(
   uploads,
   { accessToken, dryRun },
 ) {
-  const articleHtml = replaceImageSources(formatted?.html || translation?.text || "", uploads);
+  let articleHtml = "";
+  if (formatted?.html) {
+    articleHtml = formatted.html;
+  } else if (translation?.text) {
+    articleHtml = translation.text;
+  }
+  if (!articleHtml) {
+    articleHtml = "<article></article>";
+  } else if (!formatted?.html && uploads && uploads.length) {
+    articleHtml = replaceImageSources(articleHtml, uploads);
+  }
   const digest = prepareDigest(metadata?.digest || buildDigest(translation?.text || ""));
   const thumbMediaId =
     metadata?.thumbMediaId ||
