@@ -14,9 +14,8 @@ const ARTICLE_STYLE = [
 ].join(";");
 
 const PARAGRAPH_STYLE = [
-  "margin:0 0 18px",
+  "margin:0 0 24px",
   "text-align:justify",
-  "text-indent:2em",
   "font-size:16px",
   "line-height:1.78",
   "letter-spacing:0.02em",
@@ -50,7 +49,7 @@ const HEADING_STYLES = {
 };
 
 const IMAGE_WRAPPER_STYLE = [
-  "margin:28px 0",
+  "margin:24px 0",
   "text-align:center",
 ];
 
