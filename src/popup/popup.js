@@ -7,10 +7,13 @@ const imagesEmptyEl = document.getElementById("images-empty");
 const historyListEl = document.getElementById("history-list");
 const historyEmptyEl = document.getElementById("history-empty");
 const historyClearBtn = document.getElementById("history-clear");
+const washBtn = document.getElementById("wash-btn");
+const washStatusEl = document.getElementById("wash-status");
 const translationStatusEl = document.getElementById("translation-status");
 const translationTextEl = document.getElementById("translation-text");
-const translateBtn = document.getElementById("translate-btn");
 const openSettingsBtn = document.getElementById("open-settings");
+const generatedTitleInput = document.getElementById("generated-title");
+const titleStatusEl = document.getElementById("title-status");
 const formattedStatusEl = document.getElementById("formatted-status");
 const formattedPreviewEl = document.getElementById("formatted-preview");
 const copyMarkdownBtn = document.getElementById("copy-markdown");
@@ -36,7 +39,35 @@ let wechatHasToken = false;
 let wechatTokenExpiresAt = null;
 let defaultWechatOriginUrl = "";
 let wechatDraftState = null;
+let titleState = null;
+let workflowState = null;
 const port = chrome.runtime.connect({ name: "wash-articles" });
+
+const WORKFLOW_STEP_MESSAGES = {
+  idle: "点击 Wash 开始处理",
+  extracting: "正在抓取文章内容…",
+  translating: "AI 正在翻译正文…",
+  title: "AI 正在生成中文标题…",
+  uploading: "正在上传图片到公众号…",
+  formatting: "正在生成排版…",
+  publishing: "正在创建公众号草稿…",
+  complete: "流程完成，草稿已生成",
+};
+
+function setWashButtonIdle(label = "Wash") {
+  if (!washBtn) return;
+  washBtn.disabled = false;
+  washBtn.textContent = label;
+}
+
+function setWashButtonLoading(label = "处理中…") {
+  if (!washBtn) return;
+  washBtn.disabled = true;
+  washBtn.textContent = label;
+}
+
+setWashButtonIdle();
+washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
 
 function renderSummary(items, counts) {
   summaryListEl.innerHTML = "";
@@ -85,8 +116,7 @@ function renderTranslation(translation) {
   translationState = translation ?? null;
   if (!translation) {
     translationTextEl.value = "";
-    translationStatusEl.textContent = hasApiKey ? "尚未翻译" : "请先配置 API Key";
-    updateTranslateButton();
+    translationStatusEl.textContent = hasApiKey ? "等待任务开始" : "请先配置 API Key";
     return;
   }
 
@@ -103,22 +133,74 @@ function renderTranslation(translation) {
     translationTextEl.value = translation.text ?? "";
     prefillWechatFields();
   }
-
-  updateTranslateButton();
 }
 
-function updateTranslateButton() {
-  if (!translateBtn) return;
-  const isWorking = translationState?.status === "working";
-  if (isWorking) {
-    translateBtn.textContent = "翻译中…";
-  } else if (translationState?.status === "done" && translationState?.text) {
-    translateBtn.textContent = "重新翻译";
-  } else {
-    translateBtn.textContent = "开始翻译";
+function renderTitle(titleTask) {
+  titleState = titleTask ?? null;
+  if (!titleTask) {
+    generatedTitleInput.value = "";
+    titleStatusEl.textContent = hasApiKey ? "等待任务开始" : "请先配置 API Key";
+    return;
   }
-  const hasSource = Boolean(lastSourceUrl && lastSourceUrl !== "未知来源");
-  translateBtn.disabled = isWorking || !hasApiKey || !hasSource;
+  if (titleTask.status === "working") {
+    titleStatusEl.textContent = "标题生成中…";
+  } else if (titleTask.status === "error") {
+    titleStatusEl.textContent = `标题生成失败：${titleTask.error || "未知错误"}`;
+  } else {
+    titleStatusEl.textContent = titleTask.updatedAt
+      ? `标题生成完成：${formatDate(titleTask.updatedAt)}`
+      : "标题生成完成";
+  }
+  generatedTitleInput.value = titleTask.text || "";
+}
+
+function renderWorkflow(state) {
+  workflowState = state ?? null;
+  if (!washStatusEl) return;
+  if (!state) {
+    setWashButtonIdle();
+    washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
+    setWechatIdleStatus();
+    return;
+  }
+  if (state.status === "running") {
+    setWashButtonLoading();
+    const message =
+      WORKFLOW_STEP_MESSAGES[state.currentStep] ?? WORKFLOW_STEP_MESSAGES.translating;
+    washStatusEl.textContent = message;
+    if (state.currentStep === "formatting") {
+      formattedStatusEl.textContent = "正在生成排版…";
+      formattedPreviewEl.innerHTML = "排版生成中…";
+    }
+    if (state.currentStep === "uploading") {
+      wechatStatusEl.textContent = "正在上传图片到公众号…";
+    } else if (state.currentStep === "publishing") {
+      wechatStatusEl.textContent = "正在创建公众号草稿…";
+    }
+    return;
+  }
+  if (state.status === "error") {
+    setWashButtonIdle("重新 Wash");
+    washStatusEl.textContent = state.error ? `处理失败：${state.error}` : "处理失败";
+    if (state.currentStep === "uploading" || state.currentStep === "publishing") {
+      wechatStatusEl.textContent = state.error ? `处理失败：${state.error}` : "处理失败";
+    }
+    return;
+  }
+  if (state.status === "success" || state.status === "complete") {
+    setWashButtonIdle("再次 Wash");
+    washStatusEl.textContent = state.message || WORKFLOW_STEP_MESSAGES.complete;
+    wechatHasToken = true;
+    if (wechatDraftState?.media_id) {
+      wechatStatusEl.textContent = `草稿创建成功，media_id=${wechatDraftState.media_id}`;
+    } else {
+      setWechatIdleStatus();
+    }
+    return;
+  }
+  setWashButtonIdle();
+  washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
+  setWechatIdleStatus();
 }
 
 function renderFormatted(formatted) {
@@ -139,18 +221,17 @@ function renderFormatted(formatted) {
   formattedPreviewEl.innerHTML = formatted.html;
   updateFormattedButtons();
   prefillWechatFields();
-  wechatDraftState = null;
-  wechatDraftOutput.value = "";
   setWechatIdleStatus();
   updateWechatButtons();
 }
 
 function updateFormattedButtons() {
-  const available = Boolean(formattedState?.html || formattedState?.markdown);
-  copyHtmlBtn.disabled = !available;
-  copyMarkdownBtn.disabled = !available;
-  downloadHtmlBtn.disabled = !available;
-  downloadMarkdownBtn.disabled = !available;
+  const hasHtml = Boolean(formattedState?.html);
+  const hasMarkdown = Boolean(formattedState?.markdown);
+  copyHtmlBtn.disabled = !hasHtml;
+  downloadHtmlBtn.disabled = !hasHtml;
+  copyMarkdownBtn.disabled = !hasMarkdown;
+  downloadMarkdownBtn.disabled = !hasMarkdown;
 }
 
 function updateWechatButtons() {
@@ -167,6 +248,13 @@ function updateWechatButtons() {
 }
 
 function setWechatIdleStatus() {
+  if (workflowState?.status === "running" && ["uploading", "publishing"].includes(workflowState.currentStep)) {
+    return;
+  }
+  if (wechatDraftState?.media_id) {
+    wechatStatusEl.textContent = `草稿创建成功，media_id=${wechatDraftState.media_id}`;
+    return;
+  }
   if (!formattedState?.html) {
     wechatStatusEl.textContent = hasApiKey ? "等待翻译完成" : "请先完成翻译";
     return;
@@ -191,7 +279,11 @@ function prefillWechatFields() {
     return;
   }
   if (wechatTitleInput && !wechatTitleInput.value) {
-    wechatTitleInput.value = deriveTitleFromTranslation(translationState.text || "");
+    if (titleState?.text) {
+      wechatTitleInput.value = titleState.text;
+    } else {
+      wechatTitleInput.value = deriveTitleFromTranslation(translationState.text || "");
+    }
   }
   if (wechatDigestInput && !wechatDigestInput.value) {
     wechatDigestInput.value = buildDigestFromTranslation(translationState.text || "");
@@ -255,7 +347,9 @@ function render(payload) {
     renderImages([]);
     lastSourceUrl = null;
     renderTranslation(null);
+    renderTitle(null);
     renderFormatted(null);
+    renderWorkflow(null);
     return;
   }
   const sourceUrl = payload.sourceUrl ?? "";
@@ -271,7 +365,13 @@ function render(payload) {
   }
   lastSourceUrl = sourceUrl;
   renderTranslation(payload.translation ?? null);
+  renderTitle(payload.titleTask ?? null);
   renderFormatted(payload.formatted ?? null);
+  renderWorkflow(payload.workflow ?? null);
+  wechatDraftState = payload.wechatDraft ?? wechatDraftState;
+  if (wechatDraftState?.payload) {
+    wechatDraftOutput.value = JSON.stringify(wechatDraftState.payload, null, 2);
+  }
 }
 
 function requestImages(sourceUrl) {
@@ -303,8 +403,14 @@ function applySettings(settings) {
   hasApiKey = Boolean(settings?.hasApiKey);
   if (!hasApiKey) {
     translationStatusEl.textContent = "请先配置 API Key";
-  } else if (!translationState) {
-    translationStatusEl.textContent = "尚未翻译";
+    titleStatusEl.textContent = "请先配置 API Key";
+  } else {
+    if (!translationState) {
+      translationStatusEl.textContent = "等待任务开始";
+    }
+    if (!titleState) {
+      titleStatusEl.textContent = "等待任务开始";
+    }
   }
   wechatHasCredentials = Boolean(settings?.wechatHasCredentials);
   wechatHasToken = Boolean(settings?.wechatConfigured);
@@ -313,7 +419,11 @@ function applySettings(settings) {
   if (!wechatDraftState) {
     setWechatIdleStatus();
   }
-  updateTranslateButton();
+  if (!workflowState) {
+    washStatusEl.textContent = hasApiKey
+      ? WORKFLOW_STEP_MESSAGES.idle
+      : "请先配置 API Key 后再开始";
+  }
 }
 
 historyListEl.addEventListener("click", (event) => {
@@ -349,36 +459,8 @@ historyClearBtn.addEventListener("click", () => {
   });
 });
 
-translateBtn.addEventListener("click", () => {
-  if (!hasApiKey) {
-    if (confirm("尚未配置 API Key，是否前往设置？")) {
-      chrome.runtime.openOptionsPage();
-    }
-    return;
-  }
-  const hasSource = Boolean(lastSourceUrl && lastSourceUrl !== "未知来源");
-  if (!hasSource) {
-    alert("请先在页面中提取正文内容后再翻译。");
-    return;
-  }
-  translateBtn.disabled = true;
-  translationStatusEl.textContent = "翻译中…";
-  chrome.runtime.sendMessage(
-    { type: "wash-articles/translate", payload: { sourceUrl: lastSourceUrl } },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        translationStatusEl.textContent = `翻译请求失败：${chrome.runtime.lastError.message}`;
-        translationState = { status: "error", error: chrome.runtime.lastError.message };
-        updateTranslateButton();
-        return;
-      }
-      if (!response?.ok) {
-        translationStatusEl.textContent = `翻译失败：${response?.error || "未知错误"}`;
-        translationState = { status: "error", error: response?.error || "未知错误" };
-        updateTranslateButton();
-      }
-    },
-  );
+washBtn.addEventListener("click", () => {
+  startWashWorkflow();
 });
 
 openSettingsBtn.addEventListener("click", () => {
@@ -414,6 +496,56 @@ copyMarkdownBtn.addEventListener("click", () => {
       alert(`复制失败：${error.message ?? error}`);
     });
 });
+
+function startWashWorkflow() {
+  if (!hasApiKey) {
+    if (confirm("尚未配置 API Key，是否前往设置？")) {
+      chrome.runtime.openOptionsPage();
+    }
+    return;
+  }
+  renderWorkflow({ status: "running", currentStep: "extracting" });
+  renderTranslation({ status: "working", text: "" });
+  renderTitle({ status: "working", text: "" });
+  formattedState = null;
+  formattedPreviewEl.innerHTML = "等待排版结果…";
+  formattedStatusEl.textContent = "等待排版";
+  updateFormattedButtons();
+  wechatDraftState = null;
+  wechatDraftOutput.value = "";
+  setWechatIdleStatus();
+  setWashButtonLoading("启动中…");
+  washStatusEl.textContent = "正在连接页面…";
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const tabId = tabs?.[0]?.id;
+    if (!tabId) {
+      setWashButtonIdle();
+      washStatusEl.textContent = "无法获取当前标签页";
+      return;
+    }
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: "wash-articles/run-extraction" },
+      (response) => {
+        const error = chrome.runtime.lastError;
+        if (error) {
+          setWashButtonIdle("重新 Wash");
+          const message = error.message.includes("Receiving end does not exist")
+            ? "当前页面不受支持"
+            : error.message;
+          washStatusEl.textContent = `触发失败：${message}`;
+          return;
+        }
+        if (!response?.ok) {
+          setWashButtonIdle("重新 Wash");
+          washStatusEl.textContent = `提取失败：${response?.error || "未知错误"}`;
+          return;
+        }
+        washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.extracting;
+      },
+    );
+  });
+}
 
 function triggerDownload(format) {
   if (!formattedState) return;
@@ -575,7 +707,25 @@ function handleRuntimeMessage(message) {
       return;
     }
     renderTranslation(message.payload.translation ?? null);
+    renderTitle(message.payload.titleTask ?? null);
     renderFormatted(message.payload.formatted ?? null);
+    if (message.payload.workflow) {
+      renderWorkflow(message.payload.workflow);
+    }
+    if (Array.isArray(message.payload.wechatUploads) && message.payload.wechatUploads.length) {
+      wechatHasToken = true;
+      if (lastSourceUrl) {
+        requestImages(lastSourceUrl);
+      }
+    }
+    if (message.payload.wechatDraft) {
+      wechatDraftState = message.payload.wechatDraft;
+      wechatDraftOutput.value = JSON.stringify(message.payload.wechatDraft.payload ?? {}, null, 2);
+      if (message.payload.wechatDraft.media_id) {
+        wechatStatusEl.textContent = `草稿创建成功，media_id=${message.payload.wechatDraft.media_id}`;
+      }
+      updateWechatButtons();
+    }
   }
   if (message?.type === "wash-articles/settings-updated") {
     applySettings(message.settings ?? {});

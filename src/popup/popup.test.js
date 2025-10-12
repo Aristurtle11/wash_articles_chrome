@@ -13,9 +13,12 @@ function createDom() {
     <ul id="history-list"></ul>
     <div id="history-empty"></div>
     <button id="history-clear"></button>
+    <button id="wash-btn"></button>
+    <span id="wash-status"></span>
     <span id="translation-status"></span>
     <textarea id="translation-text"></textarea>
-    <button id="translate-btn"></button>
+    <input id="generated-title" />
+    <span id="title-status"></span>
     <button id="open-settings"></button>
     <span id="formatted-status"></span>
     <div id="formatted-preview"></div>
@@ -135,21 +138,29 @@ describe("popup UI", () => {
           text: "翻译段落",
           updatedAt: "2025-01-01T00:00:00Z",
         },
+        titleTask: {
+          status: "done",
+          text: "中文标题",
+          updatedAt: "2025-01-01T00:00:00Z",
+        },
         formatted: {
           html: "<article><p>排版段落</p></article>",
-          markdown: "排版段落",
+          markdown: null,
           updatedAt: "2025-01-01T00:00:01Z",
         },
+        workflow: { status: "success", currentStep: "complete" },
       },
     });
 
     const translationText = document.getElementById("translation-text");
     const formattedPreview = document.getElementById("formatted-preview");
     const formattedStatus = document.getElementById("formatted-status");
+    const generatedTitle = document.getElementById("generated-title");
 
     expect(translationText.value).toContain("翻译段落");
     expect(formattedPreview.innerHTML).toContain("排版段落");
     expect(formattedStatus.textContent).toContain("排版完成");
+    expect(generatedTitle.value).toBe("中文标题");
 
     const copyHtmlBtn = document.getElementById("copy-html");
     copyHtmlBtn.click();
@@ -184,9 +195,10 @@ describe("popup UI", () => {
         },
         formatted: {
           html: "<article><p>排版段落</p></article>",
-          markdown: "排版段落",
+          markdown: null,
           updatedAt: "2025-01-01T00:00:01Z",
         },
+        workflow: { status: "success", currentStep: "complete" },
       },
     });
 
@@ -194,7 +206,7 @@ describe("popup UI", () => {
     downloadHtmlBtn.click();
 
     const downloadMarkdownBtn = document.getElementById("download-markdown");
-    downloadMarkdownBtn.click();
+    expect(downloadMarkdownBtn.disabled).toBe(true);
 
     expect(
       sendMessageCalls.some(
@@ -205,6 +217,6 @@ describe("popup UI", () => {
       sendMessageCalls.some(
         (msg) => msg.type === "wash-articles/download-formatted" && msg.payload?.format === "markdown",
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

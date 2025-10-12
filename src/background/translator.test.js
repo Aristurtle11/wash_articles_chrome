@@ -86,4 +86,31 @@ describe("TranslatorService", () => {
 
     await expect(translator.translateContent(SAMPLE_ITEMS)).rejects.toThrow(/MAX_TOKENS/);
   });
+
+  it("generates title via Gemini", async () => {
+    const translator = new TranslatorService();
+    translator.updateSettings({ apiKey: "fake", model: "gemini-test" });
+
+    fetch.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(createResponse({ text: "中文标题" })),
+    });
+
+    const result = await translator.generateTitle(SAMPLE_ITEMS, {
+      sourceUrl: "https://example.com",
+      fallbackTitle: "Fallback",
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.text).toBe("中文标题");
+  });
+
+  it("falls back to备用标题 when没有内容", async () => {
+    const translator = new TranslatorService();
+    translator.updateSettings({ apiKey: "fake", model: "gemini-test" });
+
+    const result = await translator.generateTitle([], { fallbackTitle: "默认标题" });
+    expect(result.text).toBe("默认标题");
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });

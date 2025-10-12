@@ -28,8 +28,7 @@ describe("FormatterService", () => {
     expect(html).toContain("<h2 style=");
     expect(html).toContain("段落一");
     expect(html).toContain('<div style="margin:28px 0');
-    expect(markdown).toContain("![示例图片](https://example.com/a.jpg)");
-    expect(markdown).toMatch(/段落二/);
+    expect(markdown).toBeNull();
   });
 
   it("handles missing placeholders gracefully", () => {

@@ -170,6 +170,14 @@
   </head>
   <body>
     <h1>Wash Articles</h1>
+    <div class="section" id="operations-section">
+      <h2>操作</h2>
+      <div class="history-actions" style="justify-content:flex-start;">
+        <button id="wash-btn">Wash</button>
+        <button id="open-settings" class="secondary">配置</button>
+      </div>
+      <div id="wash-status" class="translation-status">等待开始</div>
+    </div>
     <div class="section" id="source-section">
       <h2>来源链接</h2>
       <div id="source-url" class="placeholder">暂无数据</div>
@@ -190,11 +198,12 @@
         <h2>翻译</h2>
         <span id="translation-status" class="translation-status">尚未翻译</span>
       </div>
+      <label style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px;">
+        <span style="font-size:12px;color:#475569;">AI 中文标题</span>
+        <input id="generated-title" type="text" readonly placeholder="等待生成…" style="padding:8px;border-radius:6px;border:1px solid #cbd5f5;font-size:13px;background:#f8fafc;color:#1f2933;" />
+        <span id="title-status" class="translation-status">尚未生成</span>
+      </label>
       <textarea id="translation-text" readonly placeholder="翻译结果将在此显示"></textarea>
-      <div class="history-actions" style="justify-content:flex-end;">
-        <button id="translate-btn">开始翻译</button>
-        <button id="open-settings" class="secondary">配置 API Key</button>
-      </div>
     </div>
     <div class="section" id="formatted-section">
       <div class="translation-header">

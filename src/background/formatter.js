@@ -83,10 +83,9 @@ export class FormatterService {
     const imageList = Array.isArray(images) ? images : [];
     const blocks = parseBlocks(translationText || "");
     const html = renderHtml(blocks, segments, imageList);
-    const markdown = renderMarkdown(blocks, segments, imageList);
     return {
       html,
-      markdown,
+      markdown: null,
       blocks,
       updatedAt: new Date().toISOString(),
     };
@@ -184,7 +183,7 @@ function renderImageBlock(image, sequence) {
   const captionStyle = CAPTION_STYLE.join(";");
   const creditStyle = CREDIT_STYLE.join(";");
 
-  const src = escapeHtml(image.dataUrl || image.url || "");
+  const resolvedSrc = escapeHtml(image.remoteUrl || image.url || image.dataUrl || "");
   const alt = escapeHtml(image.alt || `图像${sequence ?? ""}`);
   const caption = escapeHtml(image.caption || "");
   const credit = escapeHtml(image.credit || "");
@@ -195,7 +194,7 @@ function renderImageBlock(image, sequence) {
       : "";
   return [
     `<div style="${wrapperStyle}">`,
-    `<img src="${src}" alt="${alt}" style="${imageStyle}" />`,
+    `<img src="${resolvedSrc}" alt="${alt}" style="${imageStyle}" />`,
     captionHtml,
     `</div>`,
   ]
@@ -222,7 +221,7 @@ function renderMarkdown(blocks, items, images) {
         return "";
       }
       const alt = image.alt || "图像";
-      const src = image.url || image.dataUrl || "";
+      const src = image.remoteUrl || image.url || image.dataUrl || "";
       const caption = image.caption ? `\n> ${image.caption}` : "";
       return `![${alt}](${src})${caption}`.trim();
     }
