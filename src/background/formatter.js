@@ -14,12 +14,16 @@ const ARTICLE_STYLE = [
 ].join(";");
 
 const PARAGRAPH_STYLE = [
-  "margin:0 0 24px",
+  "margin:0",
   "text-align:justify",
   "font-size:16px",
   "line-height:1.78",
   "letter-spacing:0.02em",
   "color:#1f2937",
+].join(";");
+
+const PARAGRAPH_CONTAINER_STYLE = [
+  "margin:0 0 24px",
 ].join(";");
 
 const HEADING_STYLES = {
@@ -50,6 +54,9 @@ const HEADING_STYLES = {
 
 const IMAGE_WRAPPER_STYLE = [
   "margin:24px 0",
+  "display:flex",
+  "flex-direction:column",
+  "gap:12px",
   "text-align:center",
 ];
 
@@ -62,7 +69,6 @@ const IMAGE_STYLE = [
 ];
 
 const CAPTION_STYLE = [
-  "margin-top:12px",
   "font-size:13px",
   "line-height:1.6",
   "color:#64748b",
@@ -151,7 +157,7 @@ function renderHtml(blocks, items, images) {
       }
       if (block.kind === "paragraph") {
         const text = enrichParagraphSpacing(block.text || "", index === 0);
-        return `<p style="${PARAGRAPH_STYLE}">${escapeHtml(text)}</p>`;
+        return `<div style="${PARAGRAPH_CONTAINER_STYLE}"><p style="${PARAGRAPH_STYLE}">${escapeHtml(text)}</p></div>`;
       }
       if (block.kind === "image") {
         const image = findImage(block.sequence, items, images);
@@ -184,7 +190,7 @@ function renderImageBlock(image, sequence) {
 
   const resolvedSrc = escapeHtml(image.remoteUrl || image.url || image.dataUrl || "");
   const alt = escapeHtml(image.alt || `图像${sequence ?? ""}`);
-  const caption = escapeHtml(image.caption || "");
+  const caption = escapeHtml(image.caption || image.alt || "");
   const credit = escapeHtml(image.credit || "");
   const captionHtml = caption
     ? `<div style="${captionStyle}">${caption}${credit ? `<span style="${creditStyle}">图源：${credit}</span>` : ""}</div>`

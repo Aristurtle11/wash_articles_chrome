@@ -762,6 +762,17 @@ async function runPublishStage(tabId, context) {
       },
     );
 
+    const draftContent = draft?.payload?.articles?.[0]?.content;
+    if (draftContent) {
+      store.update(tabId, (entry = {}) => ({
+        ...entry,
+        formatted: {
+          ...(entry.formatted || {}),
+          html: draftContent,
+        },
+      }));
+    }
+
     store.update(tabId, (entry = {}) => ({
       ...entry,
       wechatDraft: draft,
@@ -1241,6 +1252,11 @@ function buildDigestFromTranslation(text) {
 function deriveDefaultTitle(current) {
   if (current?.title) {
     return current.title;
+  }
+  const items = Array.isArray(current?.items) ? current.items : [];
+  const heading = items.find((item) => item?.kind === "heading" && item.text);
+  if (heading?.text) {
+    return heading.text;
   }
   const translation = current?.translation?.text || "";
   const firstLine = translation.split(/\r?\n/).find((line) => line.trim());
