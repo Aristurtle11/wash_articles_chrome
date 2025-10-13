@@ -9,6 +9,7 @@ import {
   appendHistory,
   loadHistory,
   clearHistory,
+  migrateImageCacheIfNeeded,
 } from "./storage.js";
 import { FormatterService } from "./formatter.js";
 import { TranslatorService } from "./translator.js";
@@ -286,8 +287,13 @@ async function cacheImagesForPayload(tabId, payload) {
   const candidates = items.filter((item) => item?.kind === "image" && item.url);
 
   try {
+    await migrateImageCacheIfNeeded();
     const existing = await loadImages(sourceUrl);
-    const cachedByUrl = new Map((existing ?? []).map((img) => [img.url, img]));
+    const cachedByUrl = new Map(
+      (existing ?? [])
+        .filter((img) => img?.url && img?.dataUrl)
+        .map((img) => [img.url, img]),
+    );
     const downloads = [];
 
     for (const candidate of candidates) {

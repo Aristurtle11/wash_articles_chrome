@@ -66,15 +66,24 @@ describe('storage helpers', () => {
   });
 
   it('saves and loads images by source url', async () => {
-    const images = [
-      { url: 'https://example.com/a.jpg', sequence: 1 },
-      { url: 'https://example.com/b.jpg', sequence: 2 },
-    ];
+  const images = [
+    { url: 'https://example.com/a.jpg', sequence: 1 },
+    { url: 'https://example.com/b.jpg', sequence: 2 },
+  ];
 
-    await saveImages('https://example.com/article', images);
-    const loaded = await loadImages('https://example.com/article');
+  await saveImages('https://example.com/article', images);
+  const loaded = await loadImages('https://example.com/article');
 
-    expect(loaded).toEqual(images);
+  expect(loaded.map(({ url, sequence }) => ({ url, sequence }))).toEqual(images);
+  loaded.forEach((img) => {
+    expect(img).toMatchObject({
+      alt: '',
+      caption: '',
+      credit: '',
+      remoteUrl: '',
+      mediaId: '',
+    });
+  });
   });
 
   it('does nothing when saving empty image list', async () => {
@@ -92,7 +101,7 @@ describe('storage helpers', () => {
     expect(loadedAfterClear).toEqual([]);
   });
 
-  it('appends history, keeps newest first and limits to 20 entries', async () => {
+  it('appends history, keeps newest first and limits to 5 entries', async () => {
     const makeEntry = (id) => ({
       sourceUrl: `https://example.com/article-${id}`,
       title: `文章 ${id}`,
@@ -108,9 +117,9 @@ describe('storage helpers', () => {
 
     const history = await loadHistory();
 
-    expect(history.length).toBe(20);
-    expect(history[0].sourceUrl).toBe('https://example.com/article-24');
-    expect(history.at(-1).sourceUrl).toBe('https://example.com/article-5');
+  expect(history.length).toBe(5);
+  expect(history[0].sourceUrl).toBe('https://example.com/article-24');
+  expect(history.at(-1).sourceUrl).toBe('https://example.com/article-20');
     expect(history[0].savedAt).toMatch(/T/);
   });
 
