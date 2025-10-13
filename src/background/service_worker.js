@@ -1120,7 +1120,9 @@ function buildHistoryEntry(payload, images) {
     capturedAt: payload?.capturedAt || new Date().toISOString(),
     counts,
     items: Array.isArray(payload?.items) ? payload.items : [],
-    images: Array.isArray(images) ? images : [],
+    images: Array.isArray(images)
+      ? images.map(compactImageForHistory).filter(Boolean)
+      : [],
     titleTask: payload?.titleTask
       ? {
           status: payload.titleTask.status,
@@ -1168,6 +1170,21 @@ function computeCounts(items) {
     else if (item.kind === "heading") counters.headings += 1;
   }
   return counters;
+}
+
+function compactImageForHistory(image) {
+  if (!image || typeof image !== "object") return null;
+  return {
+    sequence: image.sequence ?? null,
+    url: image.url || "",
+    alt: image.alt || "",
+    caption: image.caption || "",
+    credit: image.credit || "",
+    remoteUrl: image.remoteUrl || "",
+    mediaId: image.mediaId || "",
+    uploadedAt: image.uploadedAt || null,
+    error: image.error || null,
+  };
 }
 
 async function downloadFormatted(sourceUrl, format) {

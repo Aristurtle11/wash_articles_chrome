@@ -141,26 +141,6 @@
         color: #94a3b8;
         font-style: italic;
       }
-      .history-list {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .history-item {
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 8px;
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .history-meta {
-        font-size: 12px;
-        color: #475569;
-      }
       .history-actions {
         display: flex;
         gap: 6px;
@@ -239,12 +219,6 @@
         <button id="wechat-copy-payload" class="secondary">复制草稿 JSON</button>
       </div>
       <textarea id="wechat-draft-output" rows="6" readonly placeholder="草稿结构将在此显示"></textarea>
-    </div>
-    <div class="section" id="history-section">
-      <h2>历史记录</h2>
-      <ul id="history-list" class="history-list"></ul>
-      <div id="history-empty" class="placeholder">暂无历史记录</div>
-      <button id="history-clear" class="danger" style="margin-top:8px;">清空历史</button>
     </div>
     <script type="module" src="./popup.js"></script>
   </body>

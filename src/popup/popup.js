@@ -2,9 +2,6 @@ const sourceUrlEl = document.getElementById("source-url");
 const captureTimeEl = document.getElementById("capture-time");
 const summaryListEl = document.getElementById("summary-list");
 const summaryEmptyEl = document.getElementById("summary-empty");
-const historyListEl = document.getElementById("history-list");
-const historyEmptyEl = document.getElementById("history-empty");
-const historyClearBtn = document.getElementById("history-clear");
 const washBtn = document.getElementById("wash-btn");
 const washStatusEl = document.getElementById("wash-status");
 const translationStatusEl = document.getElementById("translation-status");
@@ -28,7 +25,6 @@ const wechatCopyPayloadBtn = document.getElementById("wechat-copy-payload");
 const wechatDraftOutput = document.getElementById("wechat-draft-output");
 
 let lastSourceUrl = null;
-let historyEntries = [];
 let translationState = null;
 let formattedState = null;
 let wechatHasCredentials = false;
@@ -269,52 +265,6 @@ function prefillWechatFields() {
   }
 }
 
-function renderHistory(entries) {
-  historyEntries = Array.isArray(entries) ? entries : [];
-  historyListEl.innerHTML = "";
-  if (!historyEntries.length) {
-    historyEmptyEl.style.display = "block";
-    return;
-  }
-  historyEmptyEl.style.display = "none";
-  historyEntries.forEach((entry, index) => {
-    const item = document.createElement("li");
-    item.className = "history-item";
-    item.dataset.index = index;
-
-    const title = document.createElement("strong");
-    title.textContent = entry.title || entry.sourceUrl || `记录 ${index + 1}`;
-    item.appendChild(title);
-
-    const meta = document.createElement("div");
-    meta.className = "history-meta";
-    meta.textContent = `${formatDate(entry.capturedAt)} · 段落 ${entry.counts?.paragraphs ?? 0} / 图像 ${entry.counts?.images ?? 0}`;
-    item.appendChild(meta);
-
-    const actions = document.createElement("div");
-    actions.className = "history-actions";
-
-    const loadBtn = document.createElement("button");
-    loadBtn.dataset.action = "load";
-    loadBtn.className = "secondary";
-    loadBtn.textContent = "加载";
-    actions.appendChild(loadBtn);
-
-    const exportJsonBtn = document.createElement("button");
-    exportJsonBtn.dataset.action = "export-json";
-    exportJsonBtn.textContent = "导出 JSON";
-    actions.appendChild(exportJsonBtn);
-
-    const exportMdBtn = document.createElement("button");
-    exportMdBtn.dataset.action = "export-markdown";
-    exportMdBtn.textContent = "导出 Markdown";
-    actions.appendChild(exportMdBtn);
-
-    item.appendChild(actions);
-    historyListEl.appendChild(item);
-  });
-}
-
 function render(payload) {
   if (!payload) {
     sourceUrlEl.textContent = "暂无数据";
@@ -344,16 +294,6 @@ function render(payload) {
   }
 }
 
-function requestHistory() {
-  chrome.runtime.sendMessage({ type: "wash-articles/get-history" }, (response) => {
-    if (chrome.runtime.lastError) {
-      console.warn("获取历史记录失败：", chrome.runtime.lastError.message);
-      return;
-    }
-    renderHistory(response?.history ?? []);
-  });
-}
-
 function applySettings(settings) {
   wechatHasCredentials = Boolean(settings?.wechatHasCredentials);
   wechatHasToken = Boolean(settings?.wechatConfigured);
@@ -366,39 +306,6 @@ function applySettings(settings) {
     washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
   }
 }
-
-historyListEl.addEventListener("click", (event) => {
-  const action = event.target?.dataset?.action;
-  if (!action) return;
-  const item = event.target.closest("li[data-index]");
-  if (!item) return;
-  const index = Number(item.dataset.index);
-  const entry = historyEntries[index];
-  if (!entry) return;
-  if (action === "load") {
-    render({
-      ...entry,
-      cachedImages: entry.images,
-      translation: entry.translation,
-      formatted: entry.formatted,
-    });
-  } else if (action === "export-json") {
-    requestExport(entry.sourceUrl, "json");
-  } else if (action === "export-markdown") {
-    requestExport(entry.sourceUrl, "markdown");
-  }
-});
-
-historyClearBtn.addEventListener("click", () => {
-  if (!confirm("确定要清空历史记录吗？")) return;
-  chrome.runtime.sendMessage({ type: "wash-articles/clear-history" }, () => {
-    if (chrome.runtime.lastError) {
-      alert(`清空失败：${chrome.runtime.lastError.message}`);
-      return;
-    }
-    renderHistory([]);
-  });
-});
 
 washBtn.addEventListener("click", () => {
   startWashWorkflow();
@@ -580,18 +487,6 @@ wechatCopyPayloadBtn.addEventListener("click", () => {
     });
 });
 
-function requestExport(sourceUrl, format) {
-  chrome.runtime.sendMessage({ type: "wash-articles/export-entry", payload: { sourceUrl, format } }, (response) => {
-    if (chrome.runtime.lastError) {
-      alert(`导出失败：${chrome.runtime.lastError.message}`);
-      return;
-    }
-    if (!response?.ok) {
-      alert(`导出失败：${response?.error || "未知错误"}`);
-    }
-  });
-}
-
 function computeCounts(items) {
   const counters = { paragraphs: 0, images: 0, headings: 0 };
   if (!Array.isArray(items)) return counters;
@@ -631,9 +526,6 @@ function handleRuntimeMessage(message) {
   }
   if (message?.type === "wash-articles/images-cached") {
     // 已移除图片面板，该消息忽略
-  }
-  if (message?.type === "wash-articles/history-updated") {
-    renderHistory(message.history ?? []);
   }
   if (message?.type === "wash-articles/translation-updated") {
     if (!message.payload?.sourceUrl || message.payload.sourceUrl !== lastSourceUrl) {
@@ -675,8 +567,6 @@ chrome.runtime.sendMessage({ type: "wash-articles/get-content" }, (response) => 
   }
   render(response?.payload ?? null);
 });
-
-requestHistory();
 
 chrome.runtime.sendMessage({ type: "wash-articles/get-settings" }, (response) => {
   if (chrome.runtime.lastError) {

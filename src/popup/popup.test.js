@@ -8,9 +8,6 @@ function createDom() {
     <div id="capture-time"></div>
     <ul id="summary-list"></ul>
     <div id="summary-empty"></div>
-    <ul id="history-list"></ul>
-    <div id="history-empty"></div>
-    <button id="history-clear"></button>
     <button id="wash-btn"></button>
     <span id="wash-status"></span>
     <span id="translation-status"></span>
@@ -72,9 +69,6 @@ describe("popup UI", () => {
           switch (message?.type) {
             case "wash-articles/get-content":
               response = { payload: null };
-              break;
-            case "wash-articles/get-history":
-              response = { history: [] };
               break;
             case "wash-articles/get-settings":
               response = {
