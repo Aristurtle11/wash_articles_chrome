@@ -13,7 +13,7 @@ import {
 } from "./storage.js";
 import { FormatterService } from "./formatter.js";
 import { TranslatorService } from "./translator.js";
-import { uploadImagesForWeChat, createWeChatDraft } from "./wechat_service.js";
+import { uploadImagesForWeChat, createWeChatDraft, buildWeChatContent } from "./wechat_service.js";
 import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
@@ -1007,16 +1007,25 @@ async function generateFormattedOutput(tabId, uploads = null) {
       images: enrichedImages,
       uploads: effectiveUploads,
     });
+    const wechatHtml = buildWeChatContent(
+      { formatted, translation: current.translation },
+      effectiveUploads,
+    );
+    const formattedForPreview = {
+      ...formatted,
+      rawHtml: formatted.html,
+      html: wechatHtml,
+    };
     store.update(tabId, (entry = {}) => ({
       ...entry,
-      formatted,
+      formatted: formattedForPreview,
       cachedImages: enrichedImages,
     }));
     await sendMessageSafely({
       type: "wash-articles/formatted-updated",
       payload: {
         sourceUrl: current.sourceUrl,
-        formatted,
+        formatted: formattedForPreview,
       },
     });
   } catch (error) {

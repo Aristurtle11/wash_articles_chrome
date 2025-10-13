@@ -1,6 +1,20 @@
 const IMAGE_UPLOAD_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/material/add_material";
 const DRAFT_CREATE_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/draft/add";
 
+export function buildWeChatContent({ formatted, translation }, uploads = []) {
+  const uploadsList = Array.isArray(uploads) ? uploads : [];
+  const sourceHtml = typeof formatted?.html === "string" ? formatted.html.trim() : "";
+  const fallback = typeof translation?.text === "string" ? translation.text.trim() : "";
+  let content = sourceHtml || fallback;
+  if (!content) {
+    return "<article></article>";
+  }
+  if (uploadsList.length) {
+    content = replaceImageSources(content, uploadsList);
+  }
+  return content;
+}
+
 export async function uploadImagesForWeChat(images, { accessToken, dryRun }) {
   if (!Array.isArray(images) || !images.length) {
     return [];
@@ -64,17 +78,7 @@ export async function createWeChatDraft(
   uploads,
   { accessToken, dryRun },
 ) {
-  let articleHtml = "";
-  if (formatted?.html) {
-    articleHtml = formatted.html;
-  } else if (translation?.text) {
-    articleHtml = translation.text;
-  }
-  if (!articleHtml) {
-    articleHtml = "<article></article>";
-  } else if (!formatted?.html && uploads && uploads.length) {
-    articleHtml = replaceImageSources(articleHtml, uploads);
-  }
+  const articleHtml = buildWeChatContent({ formatted, translation }, uploads);
   const digest = prepareDigest(metadata?.digest || buildDigest(translation?.text || ""));
   const thumbMediaId =
     metadata?.thumbMediaId ||
