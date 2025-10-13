@@ -15,19 +15,9 @@ const copyMarkdownBtn = document.getElementById("copy-markdown");
 const copyHtmlBtn = document.getElementById("copy-html");
 const downloadMarkdownBtn = document.getElementById("download-markdown");
 const downloadHtmlBtn = document.getElementById("download-html");
-const wechatStatusEl = document.getElementById("wechat-status");
-const wechatThumbInput = document.getElementById("wechat-thumb-media");
-const wechatCreateBtn = document.getElementById("wechat-create");
-const wechatCopyPayloadBtn = document.getElementById("wechat-copy-payload");
-const wechatDraftOutput = document.getElementById("wechat-draft-output");
-
 let lastSourceUrl = null;
 let translationState = null;
 let formattedState = null;
-let wechatHasCredentials = false;
-let wechatHasToken = false;
-let wechatTokenExpiresAt = null;
-let wechatDraftState = null;
 let titleState = null;
 let workflowState = null;
 const port = chrome.runtime.connect({ name: "wash-articles" });
@@ -128,7 +118,6 @@ function renderWorkflow(state) {
   if (!state) {
     setWashButtonIdle();
     washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
-    setWechatIdleStatus();
     return;
   }
   if (state.status === "running") {
@@ -140,35 +129,20 @@ function renderWorkflow(state) {
       formattedStatusEl.textContent = "正在生成排版…";
       formattedPreviewEl.innerHTML = "排版生成中…";
     }
-    if (state.currentStep === "uploading") {
-      wechatStatusEl.textContent = "正在上传图片到公众号…";
-    } else if (state.currentStep === "publishing") {
-      wechatStatusEl.textContent = "正在创建公众号草稿…";
-    }
     return;
   }
   if (state.status === "error") {
     setWashButtonIdle("重新 Wash");
     washStatusEl.textContent = state.error ? `处理失败：${state.error}` : "处理失败";
-    if (state.currentStep === "uploading" || state.currentStep === "publishing") {
-      wechatStatusEl.textContent = state.error ? `处理失败：${state.error}` : "处理失败";
-    }
     return;
   }
   if (state.status === "success" || state.status === "complete") {
     setWashButtonIdle("再次 Wash");
     washStatusEl.textContent = state.message || WORKFLOW_STEP_MESSAGES.complete;
-    wechatHasToken = true;
-    if (wechatDraftState?.media_id) {
-      wechatStatusEl.textContent = `草稿创建成功，media_id=${wechatDraftState.media_id}`;
-    } else {
-      setWechatIdleStatus();
-    }
     return;
   }
   setWashButtonIdle();
   washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
-  setWechatIdleStatus();
 }
 
 function renderFormatted(formatted) {
@@ -179,8 +153,6 @@ function renderFormatted(formatted) {
       : "等待正文整理完成";
     formattedPreviewEl.innerHTML = "暂无排版结果";
     updateFormattedButtons();
-    setWechatIdleStatus();
-    updateWechatButtons();
     return;
   }
   formattedStatusEl.textContent = formatted.updatedAt
@@ -188,9 +160,6 @@ function renderFormatted(formatted) {
     : "排版完成";
   formattedPreviewEl.innerHTML = formatted.html;
   updateFormattedButtons();
-  prefillWechatFields();
-  setWechatIdleStatus();
-  updateWechatButtons();
 }
 
 function updateFormattedButtons() {
@@ -202,51 +171,6 @@ function updateFormattedButtons() {
   downloadMarkdownBtn.disabled = !hasMarkdown;
 }
 
-function updateWechatButtons() {
-  const available = Boolean(formattedState?.html);
-  if (wechatCreateBtn) {
-    wechatCreateBtn.disabled = !available;
-  }
-  if (wechatCopyPayloadBtn) {
-    wechatCopyPayloadBtn.disabled = !wechatDraftState;
-  }
-  if (!wechatDraftState) {
-    setWechatIdleStatus();
-  }
-}
-
-function setWechatIdleStatus() {
-  if (workflowState?.status === "running" && ["uploading", "publishing"].includes(workflowState.currentStep)) {
-    return;
-  }
-  if (wechatDraftState?.media_id) {
-    wechatStatusEl.textContent = `草稿创建成功，media_id=${wechatDraftState.media_id}`;
-    return;
-  }
-  if (!formattedState?.html) {
-    wechatStatusEl.textContent = "请先完成正文整理";
-    return;
-  }
-  if (!wechatHasCredentials) {
-    wechatStatusEl.textContent = "尚未配置公众号凭证";
-    return;
-  }
-  if (!wechatHasToken) {
-    wechatStatusEl.textContent = "已配置凭证，首次生成时将自动申请 Access Token";
-    return;
-  }
-  const expiryText = wechatTokenExpiresAt ? `（有效期至 ${formatDate(wechatTokenExpiresAt)}）` : "";
-  wechatStatusEl.textContent = `可生成公众号草稿${expiryText}`;
-}
-
-function prefillWechatFields() {
-  if (!translationState) {
-    return;
-  }
-  if (translationState.status !== "done") {
-    return;
-  }
-}
 
 function render(payload) {
   if (!payload) {
@@ -271,19 +195,9 @@ function render(payload) {
   renderTitle(payload.titleTask ?? null);
   renderFormatted(payload.formatted ?? null);
   renderWorkflow(payload.workflow ?? null);
-  wechatDraftState = payload.wechatDraft ?? wechatDraftState;
-  if (wechatDraftState?.payload) {
-    wechatDraftOutput.value = JSON.stringify(wechatDraftState.payload, null, 2);
-  }
 }
 
 function applySettings(settings) {
-  wechatHasCredentials = Boolean(settings?.wechatHasCredentials);
-  wechatHasToken = Boolean(settings?.wechatConfigured);
-  wechatTokenExpiresAt = settings?.wechatTokenExpiresAt || null;
-  if (!wechatDraftState) {
-    setWechatIdleStatus();
-  }
   if (!workflowState) {
     washStatusEl.textContent = WORKFLOW_STEP_MESSAGES.idle;
   }
@@ -335,9 +249,6 @@ function startWashWorkflow() {
   formattedPreviewEl.innerHTML = "等待排版结果…";
   formattedStatusEl.textContent = "等待排版";
   updateFormattedButtons();
-  wechatDraftState = null;
-  wechatDraftOutput.value = "";
-  setWechatIdleStatus();
   setWashButtonLoading("启动中…");
   washStatusEl.textContent = "正在连接页面…";
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -405,70 +316,6 @@ downloadMarkdownBtn.addEventListener("click", () => {
   triggerDownload("markdown");
 });
 
-wechatCreateBtn.addEventListener("click", () => {
-  if (!formattedState?.html) {
-    alert("请先完成正文整理与排版");
-    return;
-  }
-  if (!lastSourceUrl) {
-    alert("暂无可提交的文章链接");
-    return;
-  }
-  const metadata = {
-    title: titleState?.text || deriveTitleFromTranslation(translationState?.text || ""),
-    digest: "",
-    sourceUrl: "",
-    thumbMediaId: wechatThumbInput.value.trim(),
-  };
-
-  wechatStatusEl.textContent = wechatHasCredentials
-    ? "正在生成公众号草稿…"
-    : "试运行：生成模拟草稿…";
-
-  chrome.runtime.sendMessage(
-    {
-      type: "wash-articles/wechat-create-draft",
-      payload: {
-        sourceUrl: lastSourceUrl,
-        metadata,
-        dryRun: !wechatHasCredentials,
-      },
-    },
-    (response) => {
-      if (chrome.runtime.lastError) {
-        wechatStatusEl.textContent = `生成失败：${chrome.runtime.lastError.message}`;
-        return;
-      }
-      if (!response?.ok) {
-        wechatStatusEl.textContent = `生成失败：${response?.error || "未知错误"}`;
-        return;
-      }
-      wechatDraftState = response.draft;
-      wechatDraftOutput.value = JSON.stringify(response.draft?.payload ?? {}, null, 2);
-      wechatStatusEl.textContent = response.dryRun
-        ? "试运行草稿已生成"
-        : `草稿创建成功，media_id=${response.draft?.media_id || "未知"}`;
-      updateWechatButtons();
-    },
-  );
-});
-
-wechatCopyPayloadBtn.addEventListener("click", () => {
-  if (!wechatDraftState?.payload) {
-    alert("暂无可复制的草稿内容");
-    return;
-  }
-  navigator.clipboard
-    .writeText(JSON.stringify(wechatDraftState.payload, null, 2))
-    .then(() => {
-      wechatStatusEl.textContent = "草稿 JSON 已复制";
-      setTimeout(() => updateWechatButtons(), 1500);
-    })
-    .catch((error) => {
-      alert(`复制失败：${error?.message ?? error}`);
-    });
-});
-
 function computeCounts(items) {
   const counters = { paragraphs: 0, images: 0, headings: 0 };
   if (!Array.isArray(items)) return counters;
@@ -488,14 +335,6 @@ function formatDate(value) {
   return date.toLocaleString();
 }
 
-function deriveTitleFromTranslation(text) {
-  if (!text) return "待确认标题";
-  const firstLine = String(text)
-    .split(/\r?\n/)
-    .find((line) => line.trim());
-  return firstLine ? firstLine.trim().slice(0, 60) : "待确认标题";
-}
-
 function handleRuntimeMessage(message) {
   if (message?.type === "wash-articles/content-updated") {
     render(message.payload);
@@ -513,17 +352,7 @@ function handleRuntimeMessage(message) {
     if (message.payload.workflow) {
       renderWorkflow(message.payload.workflow);
     }
-    if (Array.isArray(message.payload.wechatUploads) && message.payload.wechatUploads.length) {
-      wechatHasToken = true;
-    }
-    if (message.payload.wechatDraft) {
-      wechatDraftState = message.payload.wechatDraft;
-      wechatDraftOutput.value = JSON.stringify(message.payload.wechatDraft.payload ?? {}, null, 2);
-      if (message.payload.wechatDraft.media_id) {
-        wechatStatusEl.textContent = `草稿创建成功，media_id=${message.payload.wechatDraft.media_id}`;
-      }
-      updateWechatButtons();
-    }
+    // no additional actions needed
   }
   if (message?.type === "wash-articles/settings-updated") {
     applySettings(message.settings ?? {});

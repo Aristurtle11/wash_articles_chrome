@@ -21,11 +21,6 @@ function createDom() {
     <button id="download-html"></button>
     <button id="copy-markdown"></button>
     <button id="copy-html"></button>
-    <span id="wechat-status"></span>
-    <input id="wechat-thumb-media" />
-    <button id="wechat-create"></button>
-    <button id="wechat-copy-payload"></button>
-    <textarea id="wechat-draft-output"></textarea>
   `;
 }
 
