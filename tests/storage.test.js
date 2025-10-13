@@ -7,62 +7,12 @@ import {
   appendHistory,
   loadHistory,
   clearHistory,
+  __resetStorageCachesForTests,
 } from '../src/background/storage.js';
 
-const storageData = {};
-
-function resetStorage() {
-  for (const key of Object.keys(storageData)) {
-    delete storageData[key];
-  }
-}
-
-function ensureChromeMock() {
-  globalThis.chrome = {
-    storage: {
-      local: {
-        async get(keys) {
-          if (!keys) {
-            return { ...storageData };
-          }
-          if (Array.isArray(keys)) {
-            return keys.reduce((acc, key) => {
-              acc[key] = storageData[key];
-              return acc;
-            }, {});
-          }
-          if (typeof keys === 'string') {
-            return { [keys]: storageData[keys] };
-          }
-          // object default values
-          const entries = { ...keys };
-          for (const [key, value] of Object.entries(entries)) {
-            if (key in storageData) {
-              entries[key] = storageData[key];
-            }
-          }
-          return entries;
-        },
-        async set(items) {
-          for (const [key, value] of Object.entries(items || {})) {
-            storageData[key] = value;
-          }
-        },
-        async remove(keys) {
-          const arr = Array.isArray(keys) ? keys : [keys];
-          arr.forEach((key) => {
-            delete storageData[key];
-          });
-        },
-      },
-    },
-  };
-}
-
 describe('storage helpers', () => {
-  beforeEach(() => {
-    ensureChromeMock();
-    resetStorage();
+  beforeEach(async () => {
+    __resetStorageCachesForTests();
   });
 
   it('saves and loads images by source url', async () => {
@@ -75,21 +25,12 @@ describe('storage helpers', () => {
   const loaded = await loadImages('https://example.com/article');
 
   expect(loaded.map(({ url, sequence }) => ({ url, sequence }))).toEqual(images);
-  loaded.forEach((img) => {
-    expect(img).toMatchObject({
-      alt: '',
-      caption: '',
-      credit: '',
-      remoteUrl: '',
-      mediaId: '',
-    });
-  });
   });
 
-  it('does nothing when saving empty image list', async () => {
+  it('ignores empty image list', async () => {
     await saveImages('https://example.com/article', []);
-    const store = await chrome.storage.local.get('wash_articles_images');
-    expect(store).toEqual({ wash_articles_images: undefined });
+    const loaded = await loadImages('https://example.com/article');
+    expect(loaded).toEqual([]);
   });
 
   it('clears image cache by source url', async () => {

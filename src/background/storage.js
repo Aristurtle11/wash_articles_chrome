@@ -1,92 +1,60 @@
-// 图片与历史记录存储工具，封装 chrome.storage.local。
+// In-memory storage helpers for images and history.
+// 使用服务工作线程生命周期的内存缓存，避免占用 chrome.storage 的配额。
 
-const IMAGE_NAMESPACE = "wash_articles_images";
-const HISTORY_NAMESPACE = "wash_articles_history";
-
-let imageCacheMigrated = false;
+const imageCache = new Map();
+let historyEntries = [];
 
 export async function saveImages(sourceUrl, images) {
-  if (!Array.isArray(images) || !images.length) return;
-  const { [IMAGE_NAMESPACE]: existing = {} } = await chrome.storage.local.get(
-    IMAGE_NAMESPACE,
-  );
-  existing[sourceUrl] = images
-    .map(serializeImage)
-    .filter(Boolean);
-  await chrome.storage.local.set({ [IMAGE_NAMESPACE]: existing });
+  if (!sourceUrl || !Array.isArray(images)) {
+    return;
+  }
+  imageCache.set(sourceUrl, cloneImages(images));
 }
 
 export async function loadImages(sourceUrl) {
-  if (!sourceUrl) return [];
-  const { [IMAGE_NAMESPACE]: stored = {} } = await chrome.storage.local.get(IMAGE_NAMESPACE);
-  return stored[sourceUrl] || [];
+  if (!sourceUrl) {
+    return [];
+  }
+  const cached = imageCache.get(sourceUrl);
+  return cloneImages(cached || []);
 }
 
 export async function clearImages(sourceUrl) {
-  if (!sourceUrl) return;
-  const { [IMAGE_NAMESPACE]: stored = {} } = await chrome.storage.local.get(IMAGE_NAMESPACE);
-  if (sourceUrl in stored) {
-    delete stored[sourceUrl];
-    await chrome.storage.local.set({ [IMAGE_NAMESPACE]: stored });
+  if (!sourceUrl) {
+    return;
   }
+  imageCache.delete(sourceUrl);
 }
 
 export async function appendHistory(entry) {
-  if (!entry?.sourceUrl) return;
-  const { [HISTORY_NAMESPACE]: history = [] } = await chrome.storage.local.get(
-    HISTORY_NAMESPACE,
-  );
-  const filtered = history.filter((item) => item.sourceUrl !== entry.sourceUrl);
-  filtered.unshift({ ...entry, savedAt: new Date().toISOString() });
-  const limited = filtered.slice(0, 5);
-  await chrome.storage.local.set({ [HISTORY_NAMESPACE]: limited });
+  if (!entry?.sourceUrl) {
+    return;
+  }
+  historyEntries = historyEntries.filter((item) => item.sourceUrl !== entry.sourceUrl);
+  historyEntries.unshift({
+    ...entry,
+    savedAt: new Date().toISOString(),
+  });
+  historyEntries = historyEntries.slice(0, 5);
 }
 
 export async function loadHistory() {
-  const { [HISTORY_NAMESPACE]: history = [] } = await chrome.storage.local.get(
-    HISTORY_NAMESPACE,
-  );
-  return history;
+  return historyEntries.map((entry) => ({ ...entry }));
 }
 
 export async function clearHistory() {
-  await chrome.storage.local.remove([HISTORY_NAMESPACE]);
+  historyEntries = [];
 }
 
 export async function migrateImageCacheIfNeeded() {
-  if (imageCacheMigrated) {
-    return;
-  }
-  imageCacheMigrated = true;
-  try {
-    const { [IMAGE_NAMESPACE]: stored = {} } = await chrome.storage.local.get(IMAGE_NAMESPACE);
-    const hasLegacyData = Object.values(stored || {}).some(
-      (list) =>
-        Array.isArray(list) &&
-        list.some((item) => typeof item?.dataUrl === "string" && item.dataUrl.length > 1024),
-    );
-    if (hasLegacyData) {
-      await chrome.storage.local.remove(IMAGE_NAMESPACE);
-    }
-  } catch (error) {
-    // ignore migration failure; storage APIs occasionally reject when extension shuts down
-    console.warn("[WashArticles] 图片缓存迁移失败", error);
-  }
+  // no-op: in-memory implementation无需迁移
 }
 
-function serializeImage(image) {
-  if (!image || typeof image !== "object") {
-    return null;
-  }
-  return {
-    sequence: image.sequence ?? null,
-    url: image.url || "",
-    alt: image.alt || "",
-    caption: image.caption || "",
-    credit: image.credit || "",
-    remoteUrl: image.remoteUrl || "",
-    mediaId: image.mediaId || "",
-    uploadedAt: image.uploadedAt || null,
-    error: image.error || null,
-  };
+export function __resetStorageCachesForTests() {
+  imageCache.clear();
+  historyEntries = [];
+}
+
+function cloneImages(list) {
+  return (Array.isArray(list) ? list : []).map((item) => ({ ...item }));
 }
