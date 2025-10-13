@@ -774,8 +774,8 @@ async function runPublishStage(tabId, context) {
     const metadata = {
       title: resolvedTitle,
       author: currentSettings.wechatDefaultAuthor || "",
-      digest: buildDigestFromTranslation(current.translation?.text || ""),
-      sourceUrl: currentSettings.wechatOriginUrl || current.sourceUrl || "",
+      digest: "",
+      sourceUrl: "",
       needOpenComment: false,
       onlyFansCanComment: false,
       thumbMediaId:
@@ -924,9 +924,8 @@ async function handleWeChatDraftRequest(tabId, payload) {
   const metadata = {
     title: payload.metadata?.title || current.title || deriveDefaultTitle(current),
     author: payload.metadata?.author || currentSettings.wechatDefaultAuthor || "",
-    digest: payload.metadata?.digest || buildDigestFromTranslation(current.translation?.text || ""),
-    sourceUrl:
-      payload.metadata?.sourceUrl || currentSettings.wechatOriginUrl || current.sourceUrl || "",
+    digest: "",
+    sourceUrl: "",
     needOpenComment: Boolean(payload.metadata?.needOpenComment),
     onlyFansCanComment: Boolean(payload.metadata?.onlyFansCanComment),
     thumbMediaId: payload.metadata?.thumbMediaId || currentSettings.wechatThumbMediaId || "",
@@ -1361,12 +1360,6 @@ function entryToMarkdown(entry) {
     }
   }
   return lines.join("\n");
-}
-
-function buildDigestFromTranslation(text) {
-  if (!text) return "";
-  const plain = String(text).replace(/\s+/g, " ").trim();
-  return plain.slice(0, 120);
 }
 
 function deriveDefaultTitle(current) {

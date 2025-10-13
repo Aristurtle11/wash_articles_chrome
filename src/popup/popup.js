@@ -16,9 +16,6 @@ const copyHtmlBtn = document.getElementById("copy-html");
 const downloadMarkdownBtn = document.getElementById("download-markdown");
 const downloadHtmlBtn = document.getElementById("download-html");
 const wechatStatusEl = document.getElementById("wechat-status");
-const wechatTitleInput = document.getElementById("wechat-title");
-const wechatDigestInput = document.getElementById("wechat-digest");
-const wechatSourceInput = document.getElementById("wechat-source-url");
 const wechatThumbInput = document.getElementById("wechat-thumb-media");
 const wechatCreateBtn = document.getElementById("wechat-create");
 const wechatCopyPayloadBtn = document.getElementById("wechat-copy-payload");
@@ -30,7 +27,6 @@ let formattedState = null;
 let wechatHasCredentials = false;
 let wechatHasToken = false;
 let wechatTokenExpiresAt = null;
-let defaultWechatOriginUrl = "";
 let wechatDraftState = null;
 let titleState = null;
 let workflowState = null;
@@ -250,19 +246,6 @@ function prefillWechatFields() {
   if (translationState.status !== "done") {
     return;
   }
-  if (wechatTitleInput && !wechatTitleInput.value) {
-    if (titleState?.text) {
-      wechatTitleInput.value = titleState.text;
-    } else {
-      wechatTitleInput.value = deriveTitleFromTranslation(translationState.text || "");
-    }
-  }
-  if (wechatDigestInput && !wechatDigestInput.value) {
-    wechatDigestInput.value = buildDigestFromTranslation(translationState.text || "");
-  }
-  if (wechatSourceInput && !wechatSourceInput.value) {
-    wechatSourceInput.value = defaultWechatOriginUrl || lastSourceUrl || "";
-  }
 }
 
 function render(payload) {
@@ -298,7 +281,6 @@ function applySettings(settings) {
   wechatHasCredentials = Boolean(settings?.wechatHasCredentials);
   wechatHasToken = Boolean(settings?.wechatConfigured);
   wechatTokenExpiresAt = settings?.wechatTokenExpiresAt || null;
-  defaultWechatOriginUrl = settings?.wechatOriginUrl || "";
   if (!wechatDraftState) {
     setWechatIdleStatus();
   }
@@ -433,9 +415,9 @@ wechatCreateBtn.addEventListener("click", () => {
     return;
   }
   const metadata = {
-    title: wechatTitleInput.value.trim() || deriveTitleFromTranslation(translationState?.text || ""),
-    digest: wechatDigestInput.value.trim(),
-    sourceUrl: wechatSourceInput.value.trim() || lastSourceUrl,
+    title: titleState?.text || deriveTitleFromTranslation(translationState?.text || ""),
+    digest: "",
+    sourceUrl: "",
     thumbMediaId: wechatThumbInput.value.trim(),
   };
 
@@ -512,12 +494,6 @@ function deriveTitleFromTranslation(text) {
     .split(/\r?\n/)
     .find((line) => line.trim());
   return firstLine ? firstLine.trim().slice(0, 60) : "待确认标题";
-}
-
-function buildDigestFromTranslation(text) {
-  if (!text) return "";
-  const plain = String(text).replace(/\s+/g, " ").trim();
-  return plain.slice(0, 120);
 }
 
 function handleRuntimeMessage(message) {

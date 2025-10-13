@@ -22,9 +22,6 @@ function createDom() {
     <button id="copy-markdown"></button>
     <button id="copy-html"></button>
     <span id="wechat-status"></span>
-    <input id="wechat-title" />
-    <textarea id="wechat-digest"></textarea>
-    <input id="wechat-source-url" />
     <input id="wechat-thumb-media" />
     <button id="wechat-create"></button>
     <button id="wechat-copy-payload"></button>

@@ -79,7 +79,9 @@ export async function createWeChatDraft(
   { accessToken, dryRun },
 ) {
   const articleHtml = buildWeChatContent({ formatted, translation }, uploads);
-  const digest = prepareDigest(metadata?.digest || buildDigest(translation?.text || ""));
+  const digest = typeof metadata?.digest === "string"
+    ? prepareDigest(metadata.digest)
+    : "";
   const thumbMediaId =
     metadata?.thumbMediaId ||
     (uploads && uploads.length > 0 ? uploads[0]?.mediaId || "" : "") ||
@@ -168,12 +170,6 @@ function replaceImageSources(html, uploads) {
     output = output.split(upload.localSrc).join(upload.remoteUrl);
   }
   return output;
-}
-
-function buildDigest(text) {
-  if (!text) return "";
-  const plain = text.replace(/\s+/g, " ").trim();
-  return plain.slice(0, 120);
 }
 
 function prepareDigest(text) {
