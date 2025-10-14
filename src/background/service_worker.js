@@ -21,6 +21,9 @@ import {
   maskToken,
 } from "../shared/settings.js";
 
+const SPONSOR_IMAGE_URL = chrome.runtime.getURL("assets/long.png");
+const SPONSOR_IMAGE_ID = "__wash_articles_sponsor__";
+
 const store = new ContentStore();
 const formatter = new FormatterService();
 const translator = new TranslatorService();
@@ -110,9 +113,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "wash-articles/content":
       if (tabId && message.payload) {
         void (async () => {
+          const normalizedItems = ensureSponsorPlacement(message.payload.items || []);
           const base = {
             ...message.payload,
-            counts: computeCounts(message.payload.items),
+            items: normalizedItems,
+            counts: computeCounts(normalizedItems),
             cachedImages: [],
             article: null,
             title: null,
@@ -1124,6 +1129,79 @@ function escapeHtmlText(input) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function ensureSponsorPlacement(rawItems = []) {
+  const items = Array.isArray(rawItems) ? rawItems.map((item) => ({ ...item })) : [];
+  if (!items.length) {
+    return items;
+  }
+  const hasSponsor = items.some(
+    (item) => item?.kind === "image" && item?.sponsorId === SPONSOR_IMAGE_ID,
+  );
+  if (!hasSponsor) {
+    const paragraphIndices = [];
+    const imageIndices = [];
+    items.forEach((item, index) => {
+      if (!item || typeof item !== "object") return;
+      if (item.kind === "paragraph") {
+        paragraphIndices.push(index);
+      } else if (item.kind === "image") {
+        imageIndices.push(index);
+      }
+    });
+
+    const sentinelStart = -1;
+    const sentinelEnd = items.length;
+    const imageBoundaries = [sentinelStart, ...imageIndices, sentinelEnd];
+
+    let bestGap = null;
+    for (let i = 0; i < imageBoundaries.length - 1; i += 1) {
+      const startIdx = imageBoundaries[i];
+      const endIdx = imageBoundaries[i + 1];
+      const paragraphsInGap = paragraphIndices.filter(
+        (idx) => idx > startIdx && idx < endIdx,
+      );
+      if (!paragraphsInGap.length) {
+        continue;
+      }
+      const gapSize = paragraphsInGap.length;
+      if (!bestGap || gapSize > bestGap.size) {
+        bestGap = {
+          startIdx,
+          endIdx,
+          paragraphs: paragraphsInGap,
+          size: gapSize,
+        };
+      }
+    }
+
+    if (bestGap) {
+      const mid = Math.ceil(bestGap.size / 2);
+      const targetParagraphIndex = bestGap.paragraphs[mid - 1];
+      const insertIndex = targetParagraphIndex + 1;
+      const sponsorItem = {
+        kind: "image",
+        url: SPONSOR_IMAGE_URL,
+        alt: "推广图",
+        caption: "",
+        credit: "",
+        sponsorId: SPONSOR_IMAGE_ID,
+        sequence: Number.MAX_SAFE_INTEGER,
+      };
+      items.splice(insertIndex, 0, sponsorItem);
+    }
+  }
+
+  let imageSeq = 1;
+  items.forEach((item) => {
+    if (item?.kind === "image") {
+      item.sequence = imageSeq;
+      imageSeq += 1;
+    }
+  });
+
+  return items;
 }
 
 function buildArticleText(items) {
