@@ -36,5 +36,13 @@
   "action": {
     "default_popup": "src/popup/index.html",
     "default_title": "Wash Articles 预览"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "asset/long.png"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

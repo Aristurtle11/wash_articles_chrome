@@ -21,8 +21,12 @@ import {
   maskToken,
 } from "../shared/settings.js";
 
-const SPONSOR_IMAGE_URL = chrome.runtime.getURL("assets/long.png");
+const SPONSOR_IMAGE_PATH = "asset/long.png";
+const SPONSOR_IMAGE_URL = chrome.runtime.getURL(SPONSOR_IMAGE_PATH);
 const SPONSOR_IMAGE_ID = "__wash_articles_sponsor__";
+
+let sponsorDataUrlCache = null;
+let sponsorDataPromise = null;
 
 const store = new ContentStore();
 const formatter = new FormatterService();
@@ -287,8 +291,31 @@ async function cacheImagesForPayload(tabId, payload) {
     const downloads = [];
 
     for (const candidate of candidates) {
+      if (!candidate || !candidate.url) {
+        continue;
+      }
       if (cachedByUrl.has(candidate.url)) {
         continue;
+      }
+      if (candidate.isSponsor) {
+        try {
+          const dataUrl = await ensureSponsorDataUrl();
+          const mimeType = inferMimeTypeFromDataUrl(dataUrl) || "image/png";
+          downloads.push({
+            sequence: candidate.sequence ?? null,
+            url: candidate.url,
+            alt: candidate.alt ?? "",
+            caption: candidate.caption ?? "",
+            credit: candidate.credit ?? "",
+            dataUrl,
+            mimeType,
+            fetchedAt: new Date().toISOString(),
+          });
+          log("赞助图已缓存：", candidate.url);
+          continue;
+        } catch (sponsorError) {
+          log("赞助图缓存失败：", sponsorError);
+        }
       }
       try {
         const downloaded = await fetchImage(candidate.url, tabId);
@@ -1186,6 +1213,7 @@ function ensureSponsorPlacement(rawItems = []) {
         alt: "推广图",
         caption: "",
         credit: "",
+        isSponsor: true,
         sponsorId: SPONSOR_IMAGE_ID,
         sequence: Number.MAX_SAFE_INTEGER,
       };
@@ -1557,6 +1585,44 @@ function isWeChatTokenError(error) {
     return message.includes("access_token") && message.includes("invalid");
   }
   return [40001, 40014, 42001, 42002, 42003].includes(code);
+}
+
+async function ensureSponsorDataUrl() {
+  if (sponsorDataUrlCache) {
+    return sponsorDataUrlCache;
+  }
+  if (!sponsorDataPromise) {
+    sponsorDataPromise = (async () => {
+      const response = await fetch(SPONSOR_IMAGE_URL);
+      if (!response.ok) {
+        throw new Error(`无法加载赞助图（${response.status}）`);
+      }
+      const blob = await response.blob();
+      const dataUrl = await blobToDataUrl(blob);
+      sponsorDataUrlCache = dataUrl;
+      log("赞助图资源已加载");
+      return dataUrl;
+    })().catch((error) => {
+      sponsorDataPromise = null;
+      throw error;
+    });
+  }
+  return sponsorDataPromise;
+}
+
+function inferMimeTypeFromDataUrl(dataUrl) {
+  if (typeof dataUrl !== "string") return null;
+  const match = /^data:([^;]+);/i.exec(dataUrl);
+  return match ? match[1] : null;
+}
+
+async function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("读取赞助图失败"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function parseDate(value) {
