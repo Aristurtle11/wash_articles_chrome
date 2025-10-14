@@ -13,7 +13,7 @@ import {
 } from "./storage.js";
 import { FormatterService } from "./formatter.js";
 import { TranslatorService } from "./translator.js";
-import { uploadImagesForWeChat, createWeChatDraft, buildWeChatContent } from "./wechat_service.js";
+import { buildWeChatContent } from "./wechat_service.js";
 import {
   SETTINGS_KEY,
   DEFAULT_SETTINGS,
@@ -30,9 +30,7 @@ const activePipelines = new Map();
 const WORKFLOW_STEPS = [
   "extracting",
   "preparing",
-  "uploading",
   "formatting",
-  "publishing",
   "complete",
 ];
 const WECHAT_TOKEN_ENDPOINT = "https://api.weixin.qq.com/cgi-bin/stable_token";
@@ -117,8 +115,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             article: null,
             title: null,
             formatted: null,
-            wechatUploads: [],
-            wechatDraft: null,
           };
           store.set(tabId, base);
           initializeWorkflow(tabId);
@@ -188,38 +184,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "wash-articles/get-settings":
       sendResponse({ settings: sanitizeSettings(currentSettings) });
       return false;
-    case "wash-articles/wechat-refresh-token":
-      (async () => {
-        try {
-          const result = await refreshWeChatAccessToken({
-            forceRefresh: Boolean(message.payload?.forceRefresh),
-          });
-          sendResponse({ ok: true, ...result });
-        } catch (error) {
-          const errorCode = error?.errcode ?? error?.errorCode ?? null;
-          sendResponse({
-            ok: false,
-            error: error?.message ?? String(error),
-            errorCode,
-          });
-        }
-      })();
-      return true;
-    case "wash-articles/wechat-create-draft": {
-      const sourceUrl = message.payload?.sourceUrl || null;
-      const targetTabId =
-        tabId ?? findTabIdBySource(sourceUrl) ?? store.entries()[0]?.tabId ?? null;
-      if (!targetTabId) {
-        sendResponse({ ok: false, error: "未找到对应页面内容" });
-        return false;
-      }
-      handleWeChatDraftRequest(targetTabId, message.payload ?? {})
-        .then((result) => sendResponse({ ok: true, ...result }))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    }
     case "wash-articles/get-history":
       (async () => {
         const history = await loadHistory();
@@ -370,9 +334,7 @@ function initializeWorkflow(tabId) {
       steps: {
         extracting: { status: "done", updatedAt: now },
         preparing: { status: "pending" },
-        uploading: { status: "pending" },
         formatting: { status: "pending" },
-        publishing: { status: "pending" },
       },
     },
   }));
@@ -418,13 +380,6 @@ function setWorkflowStep(tabId, step, status, patch = {}, options = {}) {
     if (status === "error") {
       next.status = "error";
       next.error = stepState.error || patch.error || prev.error || null;
-    } else if (status === "done") {
-      const unfinished = WORKFLOW_STEPS.filter((name) =>
-        name !== "complete" && name !== step && steps[name]?.status !== "done",
-      );
-      if (!unfinished.length && steps.publishing?.status === "done") {
-        next.currentStep = "complete";
-      }
     } else if (status === "running") {
       next.status = "running";
     }
@@ -473,10 +428,8 @@ async function startWashPipeline(tabId) {
   return createWorkflowPromise(tabId, async () => {
     try {
       await runPreparationStage(tabId);
-      const uploadContext = await runImageUpload(tabId);
-      await runFormattingStage(tabId, uploadContext);
-      await runPublishStage(tabId, uploadContext);
-      finalizeWorkflowSuccess(tabId, "草稿已创建");
+      await runFormattingStage(tabId);
+      finalizeWorkflowSuccess(tabId, "排版已完成");
       await emitArticleUpdate(tabId);
     } catch (error) {
       const workflowError = error instanceof WorkflowError
@@ -630,7 +583,7 @@ async function runPreparationStage(tabId) {
   }));
   try {
     setWorkflowStep(tabId, "preparing", "done");
-    setWorkflowCurrentStep(tabId, "uploading");
+    setWorkflowCurrentStep(tabId, "formatting");
     await syncHistoryEntry(tabId);
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -651,99 +604,12 @@ async function runPreparationStage(tabId) {
   await emitArticleUpdate(tabId);
 }
 
-async function runImageUpload(tabId) {
-  const current = store.get(tabId);
-  if (!current?.cachedImages || current.cachedImages.length === 0) {
-    throw new WorkflowError("uploading", "暂无缓存图片可上传");
-  }
-  if (!hasWeChatCredentials(currentSettings)) {
-    throw new WorkflowError("uploading", "请先配置公众号 AppID 和 AppSecret");
-  }
-
-  setWorkflowStep(tabId, "uploading", "running");
-  const sortedImages = sortImagesForUpload(current.cachedImages);
-  const uploadable = sortedImages.filter((image) => image?.dataUrl || image?.url);
-  if (!uploadable.length) {
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      wechatUploads: [],
-    }));
-    setWorkflowStep(tabId, "uploading", "done");
-    await emitArticleUpdate(tabId);
-    return { uploads: [], accessToken: currentSettings.wechatAccessToken || "" };
-  }
-
-  const attemptUpload = async (token) => {
-    const uploads = await uploadImagesForWeChat(uploadable, {
-      accessToken: token,
-      dryRun: false,
-    });
-    const mergedImages = attachUploadsToImages(current.cachedImages, uploads);
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      cachedImages: mergedImages,
-      wechatUploads: uploads,
-    }));
-    if (current.sourceUrl) {
-      await saveImages(current.sourceUrl, mergedImages);
-    }
-    setWorkflowStep(tabId, "uploading", "done");
-    await emitArticleUpdate(tabId);
-    return { uploads, accessToken: token };
-  };
-
-  const ensureToken = async (refresh) => {
-    let token = currentSettings.wechatAccessToken || "";
-    if (!token || isWeChatTokenExpired(currentSettings) || refresh) {
-      const refreshed = await refreshWeChatAccessToken({ forceRefresh: Boolean(refresh) });
-      token = refreshed.accessToken || currentSettings.wechatAccessToken || "";
-    }
-    return token;
-  };
-
-  let accessToken;
-  try {
-    accessToken = await ensureToken(false);
-  } catch (error) {
-    const message = error?.message ?? String(error);
-    throw new WorkflowError("uploading", message, error);
-  }
-  if (!accessToken) {
-    throw new WorkflowError("uploading", "无法获取有效的 Access Token");
-  }
-
-  try {
-    return await attemptUpload(accessToken);
-  } catch (error) {
-    if (!isWeChatTokenError(error)) {
-      const message = error?.message ?? String(error);
-      throw new WorkflowError("uploading", message, error);
-    }
-    try {
-      accessToken = await ensureToken(true);
-    } catch (refreshError) {
-      const message = refreshError?.message ?? String(refreshError);
-      throw new WorkflowError("uploading", message, refreshError);
-    }
-    if (!accessToken) {
-      throw new WorkflowError("uploading", "无法刷新 Access Token");
-    }
-    try {
-      return await attemptUpload(accessToken);
-    } catch (retryError) {
-      const message = retryError?.message ?? String(retryError);
-      throw new WorkflowError("uploading", message, retryError);
-    }
-  }
-}
-
-async function runFormattingStage(tabId, context) {
+async function runFormattingStage(tabId) {
   setWorkflowStep(tabId, "formatting", "running");
   try {
-    await generateFormattedOutput(tabId, context?.uploads || []);
+    await generateFormattedOutput(tabId);
     await syncHistoryEntry(tabId);
     setWorkflowStep(tabId, "formatting", "done");
-    setWorkflowCurrentStep(tabId, "publishing");
     await emitArticleUpdate(tabId);
   } catch (error) {
     const message = error?.message ?? String(error);
@@ -751,265 +617,19 @@ async function runFormattingStage(tabId, context) {
   }
 }
 
-async function runPublishStage(tabId, context) {
-  setWorkflowStep(tabId, "publishing", "running");
-  const current = store.get(tabId);
-  if (!current?.translation || current.translation.status !== "done") {
-    throw new WorkflowError("publishing", "正文整理尚未完成，无法创建草稿");
-  }
-  if (!current?.formatted || !current.formatted.html) {
-    throw new WorkflowError("publishing", "排版结果尚未生成");
-  }
-  const ensureToken = async (refresh, fallback) => {
-    let token = fallback || currentSettings.wechatAccessToken || "";
-    if (!token || isWeChatTokenExpired(currentSettings) || refresh) {
-      const refreshed = await refreshWeChatAccessToken({ forceRefresh: Boolean(refresh) });
-      token = refreshed.accessToken || currentSettings.wechatAccessToken || "";
-    }
-    return token;
-  };
-
-  const performDraftCreation = async (token) => {
-    const resolvedTitle = sanitizeTitle(current.titleTask?.text || deriveDefaultTitle(current)) || "待确认标题";
-    const metadata = {
-      title: resolvedTitle,
-      author: currentSettings.wechatDefaultAuthor || "",
-      digest: "",
-      sourceUrl: "",
-      needOpenComment: false,
-      onlyFansCanComment: false,
-      thumbMediaId:
-        currentSettings.wechatThumbMediaId || context?.uploads?.[0]?.mediaId || "",
-    };
-
-    if (!metadata.thumbMediaId) {
-      throw new Error("缺少封面素材 ID，可在设置中指定默认 thumb_media_id");
-    }
-
-    const draft = await createWeChatDraft(
-      {
-        formatted: current.formatted,
-        translation: current.translation,
-        metadata,
-        sourceUrl: current.sourceUrl,
-      },
-      context?.uploads || [],
-      {
-        accessToken: token,
-        dryRun: false,
-      },
-    );
-
-    const draftContent = draft?.payload?.articles?.[0]?.content;
-    if (draftContent) {
-      store.update(tabId, (entry = {}) => ({
-        ...entry,
-        formatted: {
-          ...(entry.formatted || {}),
-          html: draftContent,
-        },
-      }));
-    }
-
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      wechatDraft: draft,
-    }));
-    setWorkflowStep(tabId, "publishing", "done");
-    await syncHistoryEntry(tabId);
-    await emitArticleUpdate(tabId);
-  };
-
-  let accessToken;
-  try {
-    accessToken = await ensureToken(false, context?.accessToken);
-  } catch (error) {
-    const message = error?.message ?? String(error);
-    throw new WorkflowError("publishing", message, error);
-  }
-  if (!accessToken) {
-    throw new WorkflowError("publishing", "缺少 Access Token");
-  }
-
-  try {
-    await performDraftCreation(accessToken);
-  } catch (error) {
-    if (!isWeChatTokenError(error)) {
-      const message = error?.message ?? String(error);
-      throw new WorkflowError("publishing", message, error);
-    }
-    try {
-      accessToken = await ensureToken(true);
-      if (!accessToken) {
-        throw new Error("无法刷新 Access Token");
-      }
-      await performDraftCreation(accessToken);
-    } catch (retryError) {
-      const message = retryError?.message ?? String(retryError);
-      throw new WorkflowError("publishing", message, retryError);
-    }
-  }
-}
-
-function sortImagesForUpload(images = []) {
-  return [...images]
-    .map((img, index) => ({ img, index }))
-    .sort((a, b) => {
-      const seqA = Number.isFinite(a.img?.sequence) ? Number(a.img.sequence) : Number.MAX_SAFE_INTEGER;
-      const seqB = Number.isFinite(b.img?.sequence) ? Number(b.img.sequence) : Number.MAX_SAFE_INTEGER;
-      if (seqA !== seqB) {
-        return seqA - seqB;
-      }
-      if (a.index !== b.index) {
-        return a.index - b.index;
-      }
-      return (a.img?.url || "").localeCompare(b.img?.url || "");
-    })
-    .map((entry) => entry.img);
-}
-
-function attachUploadsToImages(images = [], uploads = []) {
-  if (!uploads.length) {
-    return images;
-  }
-  const byUrl = new Map();
-  for (const upload of uploads) {
-    if (upload?.localSrc) {
-      byUrl.set(upload.localSrc, upload);
-    }
-    if (upload?.url) {
-      byUrl.set(upload.url, upload);
-    }
-  }
-  const merged = images.map((image) => {
-    const upload = byUrl.get(image.dataUrl) || byUrl.get(image.url);
-    if (!upload) {
-      return image;
-    }
-    return {
-      ...image,
-      remoteUrl: upload.remoteUrl || upload.url || image.remoteUrl || image.url,
-      mediaId: upload.mediaId || image.mediaId || "",
-      uploadedAt: upload.uploadedAt || new Date().toISOString(),
-    };
-  });
-  return sortImagesForUpload(merged);
-}
-
-async function handleWeChatDraftRequest(tabId, payload) {
-  const current = store.get(tabId);
-  if (!current || !Array.isArray(current.items) || current.items.length === 0) {
-    throw new Error("请先提取正文内容");
-  }
-  if (!current.translation || current.translation.status !== "done") {
-    throw new Error("请先完成正文整理");
-  }
-
-  const acquireToken = async (refresh) => {
-    let token = currentSettings.wechatAccessToken || "";
-    if (!token || isWeChatTokenExpired(currentSettings) || refresh) {
-      try {
-        const refreshed = await refreshWeChatAccessToken({ forceRefresh: Boolean(refresh) });
-        token = refreshed.accessToken || currentSettings.wechatAccessToken || "";
-      } catch (error) {
-        log("尝试获取 Access Token 失败：", error);
-        token = "";
-      }
-    }
-    return token;
-  };
-
-  let ensuredToken = await acquireToken(false);
-  const dryRun = Boolean(payload.dryRun || !ensuredToken);
-  const metadata = {
-    title: payload.metadata?.title || current.title || deriveDefaultTitle(current),
-    author: payload.metadata?.author || currentSettings.wechatDefaultAuthor || "",
-    digest: "",
-    sourceUrl: "",
-    needOpenComment: Boolean(payload.metadata?.needOpenComment),
-    onlyFansCanComment: Boolean(payload.metadata?.onlyFansCanComment),
-    thumbMediaId: payload.metadata?.thumbMediaId || currentSettings.wechatThumbMediaId || "",
-  };
-
-  const attempt = async (token) => {
-    const uploads = await uploadImagesForWeChat(current.cachedImages || [], {
-      accessToken: token,
-      dryRun,
-    });
-
-    store.update(tabId, (entry = {}) => ({
-      ...entry,
-      wechatUploads: uploads,
-      cachedImages: attachUploadsToImages(entry.cachedImages || [], uploads),
-    }));
-
-    await generateFormattedOutput(tabId, uploads);
-    const refreshed = store.get(tabId);
-
-    const draft = await createWeChatDraft(
-      {
-        formatted: refreshed?.formatted || current.formatted,
-        translation: refreshed?.translation || current.translation,
-        metadata,
-        sourceUrl: refreshed?.sourceUrl || current.sourceUrl,
-      },
-      uploads,
-      {
-        accessToken: token,
-        dryRun,
-      },
-    );
-
-    return {
-      draft,
-      uploads,
-    };
-  };
-
-  try {
-    const { draft } = await attempt(ensuredToken);
-    return {
-      dryRun: draft.dryRun ?? dryRun,
-      draft,
-    };
-  } catch (error) {
-    if (dryRun || !isWeChatTokenError(error)) {
-      throw error;
-    }
-    ensuredToken = await acquireToken(true);
-    if (!ensuredToken) {
-      throw error;
-    }
-    const { draft } = await attempt(ensuredToken);
-    return {
-      dryRun: draft.dryRun ?? dryRun,
-      draft,
-    };
-  }
-}
-
-async function generateFormattedOutput(tabId, uploads = null) {
+async function generateFormattedOutput(tabId) {
   const current = store.get(tabId);
   if (!current?.translation || current.translation.status !== "done") {
     return;
   }
   try {
-    const effectiveUploads = Array.isArray(uploads) && uploads.length
-      ? uploads
-      : Array.isArray(current.wechatUploads)
-        ? current.wechatUploads
-        : [];
-    const enrichedImages = attachUploadsToImages(current.cachedImages || [], effectiveUploads);
+    const images = current.cachedImages || [];
     const formatted = formatter.format({
       articleText: current.translation.text,
       items: current.items || [],
-      images: enrichedImages,
-      uploads: effectiveUploads,
+      images,
     });
-    const wechatHtml = buildWeChatContent(
-      { formatted, translation: current.translation },
-      effectiveUploads,
-    );
+    const wechatHtml = buildWeChatContent({ formatted, translation: current.translation });
     const formattedForPreview = {
       ...formatted,
       rawHtml: formatted.html,
@@ -1018,7 +638,6 @@ async function generateFormattedOutput(tabId, uploads = null) {
     store.update(tabId, (entry = {}) => ({
       ...entry,
       formatted: formattedForPreview,
-      cachedImages: enrichedImages,
     }));
     await sendMessageSafely({
       type: "wash-articles/formatted-updated",
@@ -1055,8 +674,6 @@ async function emitArticleUpdate(tabId) {
       titleTask: current.titleTask ?? null,
       formatted: current.formatted ?? null,
       workflow: current.workflow ?? null,
-      wechatDraft: current.wechatDraft ?? null,
-      wechatUploads: current.wechatUploads ?? [],
     },
   });
 }
@@ -1159,14 +776,6 @@ function buildHistoryEntry(payload, images) {
           html: payload.formatted.html,
           markdown: payload.formatted.markdown,
           updatedAt: payload.formatted.updatedAt,
-        }
-      : null,
-    wechatUploads: Array.isArray(payload?.wechatUploads) ? payload.wechatUploads : [],
-    wechatDraft: payload?.wechatDraft
-      ? {
-          media_id: payload.wechatDraft.media_id,
-          dryRun: Boolean(payload.wechatDraft.dryRun),
-          createdAt: new Date().toISOString(),
         }
       : null,
   };
