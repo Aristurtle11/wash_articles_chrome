@@ -153,11 +153,32 @@ function buildFilename(image) {
 }
 
 async function toBlob(src) {
+  if (!src) {
+    throw new Error('缺少图片地址');
+  }
+  if (src.startsWith('data:')) {
+    return dataUrlToBlob(src);
+  }
   const response = await fetch(src);
   if (!response.ok) {
     throw new Error(`无法读取图片数据(${response.status})`);
   }
   return response.blob();
+}
+
+function dataUrlToBlob(dataUrl) {
+  const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    throw new Error('不支持的 DataURL 格式');
+  }
+  const mime = match[1];
+  const binary = atob(match[2]);
+  const len = binary.length;
+  const buffer = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    buffer[i] = binary.charCodeAt(i);
+  }
+  return new Blob([buffer], { type: mime });
 }
 
 function replaceImageSources(html, uploads) {

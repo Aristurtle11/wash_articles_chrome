@@ -23,7 +23,7 @@ describe("wechat_service", () => {
       fetch.mockResolvedValueOnce(blobResponse);
       fetch.mockResolvedValueOnce(apiResponse);
 
-      const images = [{ dataUrl: "data:image/png;base64,AA==", sequence: 1 }];
+      const images = [{ url: 'https://example.com/a.png', sequence: 1 }];
       const result = await uploadImagesForWeChat(images, { accessToken: "token", dryRun: false });
 
       expect(fetch).toHaveBeenNthCalledWith(
@@ -49,7 +49,7 @@ describe("wechat_service", () => {
       fetch.mockResolvedValueOnce(apiResponse);
 
       await expect(
-        uploadImagesForWeChat([{ dataUrl: "data:image/png;base64,AA==", sequence: 1 }], {
+        uploadImagesForWeChat([{ url: 'https://example.com/a.png', sequence: 1 }], {
           accessToken: "token",
           dryRun: false,
         }),

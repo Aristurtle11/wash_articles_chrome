@@ -24,9 +24,13 @@ import {
 const SPONSOR_IMAGE_PATH = "asset/long.png";
 const SPONSOR_IMAGE_URL = chrome.runtime.getURL(SPONSOR_IMAGE_PATH);
 const SPONSOR_IMAGE_ID = "__wash_articles_sponsor__";
+const PROFILE_CARD_PATH = "asset/squre.png";
+const PROFILE_CARD_URL = chrome.runtime.getURL(PROFILE_CARD_PATH);
 
 let sponsorDataUrlCache = null;
 let sponsorDataPromise = null;
+let profileCardDataUrlCache = null;
+let profileCardPromise = null;
 
 const store = new ContentStore();
 const formatter = new FormatterService();
@@ -318,6 +322,27 @@ async function cacheImagesForPayload(tabId, payload) {
           log("赞助图缓存失败：", sponsorError);
         }
       }
+      if (candidate.isBusinessCard) {
+        try {
+          const dataUrl = await ensureProfileCardDataUrl();
+          const mimeType = inferMimeTypeFromDataUrl(dataUrl) || "image/png";
+          downloads.push({
+            sequence: candidate.sequence ?? null,
+            url: candidate.url,
+            alt: candidate.alt ?? "",
+            caption: candidate.caption ?? "",
+            credit: candidate.credit ?? "",
+            dataUrl,
+            mimeType,
+            isBusinessCard: true,
+            fetchedAt: new Date().toISOString(),
+          });
+          log("名片图已缓存：", candidate.url);
+          continue;
+        } catch (cardError) {
+          log("名片图缓存失败：", cardError);
+        }
+      }
       try {
         const downloaded = await fetchImage(candidate.url, tabId);
         downloads.push({
@@ -327,6 +352,8 @@ async function cacheImagesForPayload(tabId, payload) {
           caption: candidate.caption ?? "",
           credit: candidate.credit ?? "",
           ...downloaded,
+          isSponsor: candidate.isSponsor ?? false,
+          isBusinessCard: candidate.isBusinessCard ?? false,
         });
         log("图片缓存成功：", candidate.url);
       } catch (error) {
@@ -338,6 +365,8 @@ async function cacheImagesForPayload(tabId, payload) {
           caption: candidate.caption ?? "",
           credit: candidate.credit ?? "",
           error: error?.message ?? String(error),
+          isSponsor: candidate.isSponsor ?? false,
+          isBusinessCard: candidate.isBusinessCard ?? false,
         });
       }
     }
@@ -1231,6 +1260,19 @@ function ensureSponsorPlacement(rawItems = []) {
     }
   });
 
+  const hasBusinessCard = items.some((item) => item?.kind === "image" && item?.isBusinessCard);
+  if (!hasBusinessCard) {
+    items.push({
+      kind: "image",
+      url: PROFILE_CARD_URL,
+      alt: "",
+      caption: "",
+      credit: "",
+      isBusinessCard: true,
+      sequence: imageSeq,
+    });
+  }
+
   return items;
 }
 
@@ -1612,6 +1654,29 @@ async function ensureSponsorDataUrl() {
   return sponsorDataPromise;
 }
 
+async function ensureProfileCardDataUrl() {
+  if (profileCardDataUrlCache) {
+    return profileCardDataUrlCache;
+  }
+  if (!profileCardPromise) {
+    profileCardPromise = (async () => {
+      const response = await fetch(PROFILE_CARD_URL);
+      if (!response.ok) {
+        throw new Error(`无法加载名片图（${response.status}）`);
+      }
+      const blob = await response.blob();
+      const dataUrl = await blobToDataUrl(blob);
+      profileCardDataUrlCache = dataUrl;
+      log("名片图资源已加载");
+      return dataUrl;
+    })().catch((error) => {
+      profileCardPromise = null;
+      throw error;
+    });
+  }
+  return profileCardPromise;
+}
+
 function inferMimeTypeFromDataUrl(dataUrl) {
   if (typeof dataUrl !== "string") return null;
   const match = /^data:([^;]+);/i.exec(dataUrl);
@@ -1622,7 +1687,7 @@ async function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => resolve(reader.result);
-    reader.onerror = () => reject(new Error("读取赞助图失败"));
+    reader.onerror = () => reject(new Error("读取图片失败"));
     reader.readAsDataURL(blob);
   });
 }

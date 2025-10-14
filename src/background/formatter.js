@@ -81,6 +81,39 @@ const CREDIT_STYLE = [
   "color:#94a3b8",
 ];
 
+const BUSINESS_WRAPPER_STYLE = [
+  "margin:48px 0 0",
+  "padding:32px 24px",
+  "border-top:1px solid #e2e8f0",
+  "background:#f9fafc",
+  "border-radius:16px",
+].join(";");
+
+const BUSINESS_TEXT_STYLE = [
+  "font-size:16px",
+  "line-height:1.8",
+  "color:#1f2937",
+  "margin:16px 0",
+  "text-align:left",
+].join(";");
+
+const BUSINESS_CENTER_TITLE_STYLE = [
+  "font-size:16px",
+  "line-height:1.8",
+  "color:#1f2937",
+  "margin:16px 0",
+  "text-align:center",
+  "font-weight:600",
+].join(";");
+
+const BUSINESS_IMAGE_STYLE = [
+  "max-width:320px",
+  "width:70%",
+  "display:inline-block",
+  "border-radius:12px",
+  "box-shadow:0 10px 24px rgba(15,23,42,0.16)",
+].join(";");
+
 export class FormatterService {
   format({ articleText, items, images }) {
     const segments = Array.isArray(items) ? items : [];
@@ -170,7 +203,9 @@ function renderHtml(blocks, items, images) {
     .filter(Boolean)
     .join("\n");
 
-  return `<article style="${ARTICLE_STYLE}">\n${htmlBlocks}\n</article>`;
+  const businessCardSection = renderBusinessCardSection(images);
+
+  return `<article style="${ARTICLE_STYLE}">\n${htmlBlocks}${businessCardSection}\n</article>`;
 }
 
 function enrichParagraphSpacing(text, isFirstParagraph) {
@@ -188,8 +223,8 @@ function renderImageBlock(image, sequence) {
   const creditStyle = CREDIT_STYLE.join(";");
 
   const resolvedSrc = escapeHtml(image.remoteUrl || image.url || image.dataUrl || "");
-  const alt = image.isSponsor ? "" : escapeHtml(image.alt || `图像${sequence ?? ""}`);
-  const caption = escapeHtml(image.caption || image.alt || "");
+  const alt = image.isSponsor || image.isBusinessCard ? "" : escapeHtml(image.alt || `图像${sequence ?? ""}`);
+  const caption = image.isBusinessCard ? "" : escapeHtml(image.caption || image.alt || "");
   const credit = escapeHtml(image.credit || "");
   const captionHtml = caption
     ? `<p style="${captionStyle}">${caption}</p>`
@@ -202,6 +237,43 @@ function renderImageBlock(image, sequence) {
   ]
     .filter(Boolean)
     .join("");
+}
+
+function renderBusinessCardSection(images) {
+  const cardImage = Array.isArray(images)
+    ? images.find((img) => img?.isBusinessCard)
+    : null;
+  if (!cardImage) {
+    return "";
+  }
+  const imgSrc = escapeHtml(cardImage.remoteUrl || cardImage.url || cardImage.dataUrl || "");
+  const imageBlock = `<div style="margin:40px 0 16px;text-align:center;"><img src="${imgSrc}" alt="" style="${BUSINESS_IMAGE_STYLE}" /></div>`;
+  const title = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">刘云飞 注册房地产经纪人</p>`;
+  const credentialTitle = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">【专业资质】</p>`;
+  const credentialText = `<p style="${BUSINESS_TEXT_STYLE}">佛罗里达州MLS认证会员 • 美国房地产经纪人协会（NAR）认证会员 • 奥兰多迪士尼区房地产委员会（OCAR）核心成员</p>`;
+  const advantageTitle = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">【核心优势】</p>`;
+  const advantages = [
+    {
+      label: "以数据驱动决策",
+      text: "依托MLS实时交易数据库，提供深度市场趋势分析及智能化定价策略。",
+    },
+    {
+      label: "以专业创造价值",
+      text: "运用结构化谈判体系与风险管控模型，实现客户资产优化配置。",
+    },
+    {
+      label: "以诚信铸就口碑",
+      text: "恪守NAR职业道德准则，建立全透明化服务流程，全程法律文件备案可溯。",
+    },
+  ].map(
+    ({ label, text }) =>
+      `<p style="${BUSINESS_TEXT_STYLE}"><span style="text-decoration:underline;font-weight:600;">${escapeHtml(label)}</span>：${escapeHtml(text)}</p>`,
+  ).join("\n");
+  const scopeTitle = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">【服务范畴】</p>`;
+  const scopeText = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">住宅买卖 | 土地投资 | 房屋租赁管理 | 商业地产买卖</p>`;
+  const closing = `<p style="${BUSINESS_TEXT_STYLE};font-weight:700;">深耕一城，精研一事。我们以二十年在地沉淀，为每位客户构建定制化房地产解决方案。</p>`;
+
+  return `\n<div style="${BUSINESS_WRAPPER_STYLE}">\n${imageBlock}\n${title}\n${credentialTitle}\n${credentialText}\n${advantageTitle}\n${advantages}\n${scopeTitle}\n${scopeText}\n${closing}\n</div>`;
 }
 
 function renderMarkdown(blocks, items, images) {

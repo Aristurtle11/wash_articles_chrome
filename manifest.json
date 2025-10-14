@@ -40,9 +40,12 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "asset/long.png"
+        "asset/long.png",
+        "asset/squre.png"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ]
 }
