@@ -192,10 +192,8 @@ function renderImageBlock(image, sequence) {
   const caption = escapeHtml(image.caption || image.alt || "");
   const credit = escapeHtml(image.credit || "");
   const captionHtml = caption
-    ? `<p style="${captionStyle}">${caption}${credit ? `<span style="${creditStyle}">图源：${credit}</span>` : ""}</p>`
-    : credit
-      ? `<p style="${captionStyle}"><span style="${creditStyle}">图源：${credit}</span></p>`
-      : "";
+    ? `<p style="${captionStyle}">${caption}</p>`
+    : "";
   return [
     `<div style="${wrapperStyle}">`,
     `<img src="${resolvedSrc}" alt="${alt}" style="${imageStyle}" />`,

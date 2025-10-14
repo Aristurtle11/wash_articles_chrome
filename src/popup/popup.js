@@ -26,8 +26,10 @@ const WORKFLOW_STEP_MESSAGES = {
   idle: "点击 Wash 开始处理",
   extracting: "正在抓取文章内容…",
   preparing: "正在整理正文与标题…",
+  uploading: "正在上传图片到公众号…",
   formatting: "正在生成排版…",
-  complete: "流程完成，排版已生成",
+  publishing: "正在创建公众号草稿…",
+  complete: "流程完成，草稿已生成",
 };
 
 function setWashButtonIdle(label = "Wash") {
