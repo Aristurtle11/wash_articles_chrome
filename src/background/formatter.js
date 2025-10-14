@@ -16,10 +16,16 @@ const ARTICLE_STYLE = [
 const PARAGRAPH_STYLE = [
   "margin:0 0 24px",
   "text-align:justify",
+  "text-justify:inter-ideograph",
   "font-size:16px",
   "line-height:1.78",
   "letter-spacing:0.02em",
   "color:#1f2937",
+  "-webkit-hyphens:auto",
+  "-ms-hyphens:auto",
+  "hyphens:auto",
+  "hyphenate-character:'-'",
+  "overflow-wrap:break-word",
 ].join(";");
 
 const HEADING_STYLES = {
