@@ -188,7 +188,7 @@ function renderImageBlock(image, sequence) {
   const creditStyle = CREDIT_STYLE.join(";");
 
   const resolvedSrc = escapeHtml(image.remoteUrl || image.url || image.dataUrl || "");
-  const alt = escapeHtml(image.alt || `图像${sequence ?? ""}`);
+  const alt = image.isSponsor ? "" : escapeHtml(image.alt || `图像${sequence ?? ""}`);
   const caption = escapeHtml(image.caption || image.alt || "");
   const credit = escapeHtml(image.credit || "");
   const captionHtml = caption

@@ -309,6 +309,7 @@ async function cacheImagesForPayload(tabId, payload) {
             credit: candidate.credit ?? "",
             dataUrl,
             mimeType,
+            isSponsor: true,
             fetchedAt: new Date().toISOString(),
           });
           log("赞助图已缓存：", candidate.url);
@@ -1093,6 +1094,7 @@ function compactImageForHistory(image) {
     mediaId: image.mediaId || "",
     uploadedAt: image.uploadedAt || null,
     error: image.error || null,
+    isSponsor: Boolean(image.isSponsor),
   };
 }
 
@@ -1210,7 +1212,7 @@ function ensureSponsorPlacement(rawItems = []) {
       const sponsorItem = {
         kind: "image",
         url: SPONSOR_IMAGE_URL,
-        alt: "推广图",
+        alt: "",
         caption: "",
         credit: "",
         isSponsor: true,
