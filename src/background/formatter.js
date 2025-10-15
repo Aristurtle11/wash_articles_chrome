@@ -107,11 +107,12 @@ const BUSINESS_CENTER_TITLE_STYLE = [
 ].join(";");
 
 const BUSINESS_IMAGE_STYLE = [
-  "max-width:320px",
-  "width:70%",
-  "display:inline-block",
+  "display:block",
+  "max-width:420px",
+  "width:80%",
+  "margin:0 auto",
   "border-radius:12px",
-  "box-shadow:0 10px 24px rgba(15,23,42,0.16)",
+  "box-shadow:0 12px 30px rgba(15,23,42,0.18)",
 ].join(";");
 
 export class FormatterService {
