@@ -1271,6 +1271,7 @@ function ensureSponsorPlacement(rawItems = []) {
       isBusinessCard: true,
       sequence: imageSeq,
     });
+    imageSeq += 1;
   }
 
   return items;

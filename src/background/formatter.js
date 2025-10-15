@@ -196,6 +196,9 @@ function renderHtml(blocks, items, images) {
         if (!image) {
           return "";
         }
+        if (image.isBusinessCard) {
+          return "";
+        }
         return renderImageBlock(image, block.sequence);
       }
       return "";
