@@ -81,6 +81,13 @@ const CREDIT_STYLE = [
   "color:#94a3b8",
 ];
 
+const SPONSOR_SPACER_STYLE = [
+  "margin:24px 0",
+  "line-height:1",
+  "font-size:0",
+  "content:' '",
+].join(";");
+
 const BUSINESS_WRAPPER_STYLE = [
   "margin:48px 0 0",
   "padding:32px 24px",
@@ -233,7 +240,7 @@ function renderImageBlock(image, sequence) {
   const captionHtml = caption
     ? `<p style="${captionStyle}">${caption}</p>`
     : "";
-  return [
+  const block = [
     `<div style="${wrapperStyle}">`,
     `<img src="${resolvedSrc}" alt="${alt}" style="${imageStyle}" />`,
     captionHtml,
@@ -241,6 +248,11 @@ function renderImageBlock(image, sequence) {
   ]
     .filter(Boolean)
     .join("");
+  if (image.isSponsor) {
+    return `${block}
+<p style="${SPONSOR_SPACER_STYLE}">&nbsp;</p>`;
+  }
+  return block;
 }
 
 function renderBusinessCardSection(images) {
