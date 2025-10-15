@@ -79,9 +79,10 @@ export async function createWeChatDraft(
   { accessToken, dryRun },
 ) {
   const articleHtml = buildWeChatContent({ formatted, translation }, uploads);
-  const digest = typeof metadata?.digest === "string"
-    ? prepareDigest(metadata.digest)
-    : "";
+  const rawDigest = typeof metadata?.digest === "string"
+    ? metadata.digest.trim()
+    : formatted?.digest?.trim() || "";
+  const digest = rawDigest ? prepareDigest(rawDigest) : "";
   const thumbMediaId =
     metadata?.thumbMediaId ||
     (uploads && uploads.length > 0 ? uploads[0]?.mediaId || "" : "") ||
@@ -96,13 +97,15 @@ export async function createWeChatDraft(
         title: metadata?.title || deriveTitle(translation?.text || formatted?.markdown || ""),
         author: "佛州房地产刘云飞",
         content: articleHtml,
-        digest,
         content_source_url: (metadata?.sourceUrl || sourceUrl || "").trim(),
         need_open_comment: metadata?.needOpenComment ? 1 : 0,
         only_fans_can_comment: metadata?.onlyFansCanComment ? 1 : 0,
       },
     ],
   };
+  if (digest) {
+    payload.articles[0].digest = digest;
+  }
   if (thumbMediaId) {
     payload.articles[0].thumb_media_id = thumbMediaId;
   }

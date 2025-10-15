@@ -852,7 +852,7 @@ async function runPublishStage(tabId, context) {
   const metadata = {
     title: resolvedTitle,
     author: currentSettings.wechatDefaultAuthor || "",
-    digest: "",
+    digest: resolvedTitle,
     sourceUrl: "",
     needOpenComment: false,
     onlyFansCanComment: false,
@@ -946,6 +946,7 @@ async function generateFormattedOutput(tabId, uploads = null) {
       ...formatted,
       rawHtml: formatted.html,
       html: wechatHtml,
+      digest: sanitizeTitle(current.titleTask?.text || deriveDefaultTitle(current)) || "",
     };
     store.update(tabId, (entry = {}) => ({
       ...entry,
