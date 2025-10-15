@@ -1,11 +1,13 @@
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-2.5-pro";
+const TRANSLATE_PROMPT_PATH = "asset/translate_prompts.txt";
+const TRANSLATE_PROMPT_URL = chrome.runtime.getURL(TRANSLATE_PROMPT_PATH);
 const TRANSLATION_CONFIG = {
   temperature: 0.3,
   topP: 0.8,
   maxOutputTokens: 65536,
   thinkingConfig: {
-    thinkingBudget: 0,
+    thinkingBudget: 24567,
   },
 };
 const TITLE_CONFIG = {
@@ -16,6 +18,9 @@ const TITLE_CONFIG = {
     thinkingBudget: 0,
   },
 };
+
+let translationPromptCache = null;
+let translationPromptPromise = null;
 
 function log(...args) {
   console.debug("[WashArticles:Translator]", ...args);
@@ -44,15 +49,8 @@ function cloneConversation(conversation) {
     .filter(Boolean);
 }
 
-function buildTranslationPrompt(markdown, { sourceUrl, fallbackTitle } = {}) {
-  const lines = [
-    "你是一名专业的中英翻译，请将以下英文文章翻译成自然流畅的中文。",
-    "要求：",
-    "1. 保留 Markdown 格式中的标题（#、## 等）与段落结构；",
-    "2. 保留形如 {{[Image N]}} 的图片占位符，不要翻译或删除；",
-    "3. 统一使用简体中文，保持数字、机构及人名准确；",
-    "4. 不要添加额外说明、总结或对话标记，仅输出翻译后的正文。",
-  ];
+function buildTranslationPrompt(template, markdown, { sourceUrl, fallbackTitle } = {}) {
+  const lines = [template.trim()];
   if (fallbackTitle) {
     lines.push(`原文标题：${fallbackTitle}`);
   }
@@ -70,7 +68,8 @@ function buildTitlePrompt({ fallbackTitle, sourceUrl } = {}) {
     "基于以上已经翻译成中文的文章内容，请提供一个吸引人的中文标题。",
     "要求：",
     "1. 标题需准确概括文章核心观点；",
-    "2. 使用简洁有力的语言，长度控制在 22 个汉字以内；",
+    "2. 使用简洁有力的语言，长度控制在 64 个汉字以内；",
+    "3. 一定要吸引人的眼球，让人一眼看到就被吸引过来；",
     "3. 不要返回序号、引号或其他装饰符，仅输出标题文本。",
   ];
   if (fallbackTitle) {
@@ -144,9 +143,10 @@ export class TranslatorService {
       };
     }
 
+    const promptTemplate = await loadTranslationPrompt();
     const userMessage = {
       role: "user",
-      parts: [{ text: buildTranslationPrompt(input, { sourceUrl, fallbackTitle }) }],
+      parts: [{ text: buildTranslationPrompt(promptTemplate, input, { sourceUrl, fallbackTitle }) }],
     };
 
     log("请求翻译", {
@@ -245,4 +245,25 @@ export class TranslatorService {
     }
     return response.json();
   }
+}
+
+async function loadTranslationPrompt() {
+  if (translationPromptCache) {
+    return translationPromptCache;
+  }
+  if (!translationPromptPromise) {
+    translationPromptPromise = (async () => {
+      const response = await fetch(TRANSLATE_PROMPT_URL);
+      if (!response.ok) {
+        throw new Error(`无法加载翻译提示词（${response.status}）`);
+      }
+      const text = await response.text();
+      translationPromptCache = text;
+      return text;
+    })().catch((error) => {
+      translationPromptPromise = null;
+      throw error;
+    });
+  }
+  return translationPromptPromise;
 }

@@ -1338,7 +1338,7 @@ function sanitizeTitle(title) {
     .trim();
   if (!cleaned) return "";
   const chars = Array.from(cleaned);
-  return chars.slice(0, 22).join("");
+  return chars.slice(0, 64).join("");
 }
 
 function entryToMarkdown(entry) {

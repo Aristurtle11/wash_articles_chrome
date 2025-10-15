@@ -94,7 +94,7 @@ export async function createWeChatDraft(
       {
         article_type: "news",
         title: metadata?.title || deriveTitle(translation?.text || formatted?.markdown || ""),
-        author: metadata?.author || "",
+        author: "佛州房地产刘云飞",
         content: articleHtml,
         digest,
         content_source_url: (metadata?.sourceUrl || sourceUrl || "").trim(),
