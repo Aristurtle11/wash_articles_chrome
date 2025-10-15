@@ -12,6 +12,7 @@
   ],
   "host_permissions": [
     "https://www.realtor.com/news/*",
+    "https://www.realtor.com/advice/*",
     "https://api.weixin.qq.com/*",
     "https://generativelanguage.googleapis.com/*"
   ],
@@ -23,7 +24,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.realtor.com/news/*"
+        "https://www.realtor.com/news/*",
+        "https://www.realtor.com/advice/*"
       ],
       "js": [
         "src/content/extractor.js",

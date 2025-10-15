@@ -3,8 +3,11 @@
 
 (() => {
   const baseUrl = window.location.href;
-  const allowedPrefix = "https://www.realtor.com/news/";
-  if (!baseUrl.startsWith(allowedPrefix)) {
+  const allowedPrefixes = [
+    "https://www.realtor.com/news/",
+    "https://www.realtor.com/advice/",
+  ];
+  if (!allowedPrefixes.some((prefix) => baseUrl.startsWith(prefix))) {
     console.info("[WashArticles] 当前页面不在支持范围内，跳过处理", baseUrl);
     return;
   }
