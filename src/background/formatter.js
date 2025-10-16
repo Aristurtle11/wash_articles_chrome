@@ -67,20 +67,6 @@ const IMAGE_STYLE = [
   "margin:0 auto",
 ];
 
-const CAPTION_STYLE = [
-  "margin:12px 0 0",
-  "font-size:13px",
-  "line-height:1.6",
-  "color:#64748b",
-  "text-align:center",
-];
-
-const CREDIT_STYLE = [
-  "margin-left:8px",
-  "font-size:12px",
-  "color:#94a3b8",
-];
-
 const SPONSOR_SPACER_STYLE = [
   "margin:24px 0",
   "line-height:1",
@@ -230,20 +216,11 @@ function enrichParagraphSpacing(text, isFirstParagraph) {
 function renderImageBlock(image, sequence) {
   const wrapperStyle = IMAGE_WRAPPER_STYLE.join(";");
   const imageStyle = IMAGE_STYLE.join(";");
-  const captionStyle = CAPTION_STYLE.join(";");
-  const creditStyle = CREDIT_STYLE.join(";");
 
   const resolvedSrc = escapeHtml(image.remoteUrl || image.url || image.dataUrl || "");
-  const alt = image.isSponsor || image.isBusinessCard ? "" : escapeHtml(image.alt || `图像${sequence ?? ""}`);
-  const caption = image.isBusinessCard ? "" : escapeHtml(image.caption || image.alt || "");
-  const credit = escapeHtml(image.credit || "");
-  const captionHtml = caption
-    ? `<p style="${captionStyle}">${caption}</p>`
-    : "";
   const block = [
     `<div style="${wrapperStyle}">`,
-    `<img src="${resolvedSrc}" alt="${alt}" style="${imageStyle}" />`,
-    captionHtml,
+    `<img src="${resolvedSrc}" style="${imageStyle}" />`,
     `</div>`,
   ]
     .filter(Boolean)
@@ -263,7 +240,7 @@ function renderBusinessCardSection(images) {
     return "";
   }
   const imgSrc = escapeHtml(cardImage.remoteUrl || cardImage.url || cardImage.dataUrl || "");
-  const imageBlock = `<div style="margin:40px 0 16px;text-align:center;"><img src="${imgSrc}" alt="" style="${BUSINESS_IMAGE_STYLE}" /></div>`;
+  const imageBlock = `<div style="margin:40px 0 16px;text-align:center;"><img src="${imgSrc}" style="${BUSINESS_IMAGE_STYLE}" /></div>`;
   const title = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">刘云飞 注册房地产经纪人</p>`;
   const credentialTitle = `<p style="${BUSINESS_CENTER_TITLE_STYLE}">【专业资质】</p>`;
   const credentialText = `<p style="${BUSINESS_TEXT_STYLE}">佛罗里达州MLS认证会员 • 美国房地产经纪人协会（NAR）认证会员 • 奥兰多迪士尼区房地产委员会（OCAR）核心成员</p>`;
