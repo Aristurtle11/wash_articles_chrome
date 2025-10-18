@@ -71,10 +71,9 @@
 
 请严格按照我为你设定的角色和上述所有需求，开始生成以下三个文档：
 
-1. 
-2. **doc/MVP.md**
-3. **doc/TDD.md (Technical Design Document)**
-4. **PROGRESS.md**
+1. **doc/MVP.md**
+2. **doc/TDD.md (Technical Design Document)**
+3. **PROGRESS.md**
 
 
 
