@@ -69,7 +69,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Create `src/services/wechat_service.js`.
     - Implement `getAccessToken()` to fetch and cache the WeChat access token.
     - **Reference:** [`docs/wechat_official/wechat_official_token_fetch.md`](./wechat_official/wechat_official_token_fetch.md)
-- [ ] **Task 3.3: Workflow Integration**
+- [x] **Task 3.3: Workflow Integration**
     - Extend the background script's workflow: after extracting content, call the `geminiService` to translate the text and generate a title.
     - `console.log` the translated results.
 
