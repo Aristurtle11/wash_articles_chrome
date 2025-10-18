@@ -44,7 +44,7 @@ This document breaks down the development of the Chrome extension into a series 
 - [x] **Task 2.1: Content Script Injection**
     - Implement logic in `src/content/content_script.js` to inject a "Start" button into the bottom-right corner of `realtor.com` pages.
     - Clicking the button should open the extension's popup.
-- [ ] **Task 2.2: Realtor.com Parser**
+- [x] **Task 2.2: Realtor.com Parser**
     - Create `src/parsers/realtorParser.js`.
     - Implement the `extract()` method to traverse the DOM of a `realtor.com` news/advice article and extract all text paragraphs and images.
     - Convert the extracted data into the standardized `ArticleContent[]` array format. The first image found should be marked with `isCover: true`.
