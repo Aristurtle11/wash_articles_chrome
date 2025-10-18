@@ -1,42 +1,15 @@
-const STORAGE_KEYS = ['wechatAppId', 'wechatAppSecret', 'geminiApiKey'];
+import { getCredentials, setCredentials, SETTINGS_KEYS } from '../shared/settings.js';
+
+const CREDENTIAL_FIELDS = [
+  SETTINGS_KEYS.WECHAT_APP_ID,
+  SETTINGS_KEYS.WECHAT_APP_SECRET,
+  SETTINGS_KEYS.GEMINI_API_KEY,
+];
 const STATUS_TIMEOUT_MS = 3000;
 
 const form = document.querySelector('#credentials-form');
 const saveButton = document.querySelector('#saveButton');
 const statusMessage = document.querySelector('#statusMessage');
-
-/**
- * Retrieves stored credentials from chrome.storage.local.
- * @returns {Promise<Record<string, string>>}
- */
-function loadCredentials() {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.get(STORAGE_KEYS, (items) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-        return;
-      }
-      resolve(items);
-    });
-  });
-}
-
-/**
- * Saves the provided credentials into chrome.storage.local.
- * @param {Record<string, string>} credentials
- * @returns {Promise<void>}
- */
-function saveCredentials(credentials) {
-  return new Promise((resolve, reject) => {
-    chrome.storage.local.set(credentials, () => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-        return;
-      }
-      resolve();
-    });
-  });
-}
 
 /**
  * Updates the status message element with feedback for the user.
@@ -61,8 +34,8 @@ function setStatus(message, type = 'idle') {
 
 async function initializeForm() {
   try {
-    const stored = await loadCredentials();
-    STORAGE_KEYS.forEach((key) => {
+    const stored = await getCredentials();
+    CREDENTIAL_FIELDS.forEach((key) => {
       const input = form.querySelector(`#${key}`);
       if (input) {
         input.value = stored[key] || '';
@@ -78,7 +51,7 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const formData = new FormData(form);
-  const credentials = STORAGE_KEYS.reduce((accumulator, key) => {
+  const credentials = CREDENTIAL_FIELDS.reduce((accumulator, key) => {
     accumulator[key] = (formData.get(key) || '').trim();
     return accumulator;
   }, /** @type {Record<string, string>} */ ({}));
@@ -87,7 +60,7 @@ form.addEventListener('submit', async (event) => {
   setStatus('Saving...');
 
   try {
-    await saveCredentials(credentials);
+    await setCredentials(credentials);
     setStatus('Credentials saved.', 'success');
   } catch (error) {
     console.error('Failed to save credentials:', error);

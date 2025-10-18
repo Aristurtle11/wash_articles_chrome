@@ -29,7 +29,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Create `src/options/index.html` with input fields for WeChat AppID, AppSecret, and Gemini API Key.
     - Implement `src/options/options.js` to save these values to `chrome.storage.local`.
     - Ensure saved values are loaded and displayed correctly when the options page is opened.
-- [ ] **Task 1.3: Shared Settings Module**
+- [x] **Task 1.3: Shared Settings Module**
     - Create `src/shared/settings.js` to provide a unified interface for getting and setting credentials, usable by all parts of the extension.
 - [ ] **Task 1.4: Popup UI Skeleton**
     - Create `src/popup/index.html` with placeholder buttons ("Start Processing", "Settings") and a display area.
