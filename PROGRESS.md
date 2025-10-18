@@ -79,7 +79,7 @@ This document breaks down the development of the Chrome extension into a series 
 
 **Goal:** Upload images to WeChat and create an initial draft.
 
-- [ ] **Task 4.1: WeChat Service (Image Uploads)**
+- [x] **Task 4.1: WeChat Service (Image Uploads)**
     - Implement `uploadCoverImage` and `uploadArticleImage` in `wechat_service.js`.
     - **Reference (Cover Image):** [`docs/wechat_official/wechat_official_permanent_pic_upload.md`](./wechat_official/wechat_official_permanent_pic_upload.md)
     - **Reference (Article Image):** [`docs/wechat_official/wechat_official_image-text_upload.md`](./wechat_official/wechat_official_image-text_upload.md)
