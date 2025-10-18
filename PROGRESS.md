@@ -22,7 +22,7 @@ This document breaks down the development of the Chrome extension into a series 
 
 **Goal:** Establish the basic extension structure and allow the user to configure and save necessary credentials.
 
-- [ ] **Task 1.1: Basic Extension Scaffolding**
+- [x] **Task 1.1: Basic Extension Scaffolding**
     - Create `manifest.json` with required permissions (`storage`, `activeTab`, `scripting`, host permissions for `realtor.com`).
     - Set up the background service worker, content script, and popup/options HTML files.
 - [ ] **Task 1.2: Options UI**

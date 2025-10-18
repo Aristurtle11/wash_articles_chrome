@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Realtor Article WeChat Publisher",
+  "description": "Extract articles from realtor.com, translate them, and prepare WeChat drafts.",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.realtor.com/news/*",
+    "https://www.realtor.com/advice/*"
+  ],
+  "background": {
+    "service_worker": "src/background/serviceWorker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "WeChat Publisher",
+    "default_popup": "src/popup/index.html"
+  },
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.realtor.com/news/*",
+        "https://www.realtor.com/advice/*"
+      ],
+      "js": [
+        "src/content/contentScript.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
