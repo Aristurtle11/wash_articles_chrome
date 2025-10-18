@@ -65,7 +65,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Create `src/services/geminiService.js`.
     - Implement the `translate()` and `generateTitle()` functions.
     - **Reference:** [`docs/gemini_api/gemini_api_usage.md`](./gemini_api/gemini_api_usage.md)
-- [ ] **Task 3.2: WeChat Service (Authentication)**
+- [x] **Task 3.2: WeChat Service (Authentication)**
     - Create `src/services/wechat_service.js`.
     - Implement `getAccessToken()` to fetch and cache the WeChat access token.
     - **Reference:** [`docs/wechat_official/wechat_official_token_fetch.md`](./wechat_official/wechat_official_token_fetch.md)
