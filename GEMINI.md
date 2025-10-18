@@ -14,7 +14,7 @@ This project is a Chrome extension named "Wash Articles Extension". Its main pur
 The extension is divided into several components:
 
 *   **Background Script (`src/background/service_worker.js`):** This is the core of the extension。它负责内容与图片缓存、历史记录维护，并编排“洗稿”流程：正文整理 → 图片上传 → 排版 → 生成公众号草稿。
-*   **Content Script (`src/content/content_script.js`):** This script is injected into web pages that match the host permissions (e.g., `https://www.realtor.com/news/*`). It's responsible for extracting the article content from the DOM.
+*   **Content Script (`src/content/content_script.js`):** This script is injected into web pages that match the host permissions (例如 `https://www.realtor.com/news/*`、`https://www.realtor.com/advice/finance/*`)。它负责从 DOM 中提取正文内容。
 *   **Popup (`src/popup/`):** This provides the main user interface for the extension, allowing users to trigger the content extraction and see the results.
 *   **Options Page (`src/options/`):** 该页面用于配置公众号 AppID / AppSecret 等凭证，并触发 Access Token 获取；不再需要翻译类 API 配置。
 *   **Shared Code (`src/shared/`):** This directory contains code that is shared between different parts of the extension, such as settings management.
