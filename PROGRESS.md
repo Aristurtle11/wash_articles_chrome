@@ -48,7 +48,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Create `src/parsers/realtorParser.js`.
     - Implement the `extract()` method to traverse the DOM of a `realtor.com` news/advice article and extract all text paragraphs and images.
     - Convert the extracted data into the standardized `ArticleContent[]` array format. The first image found should be marked with `isCover: true`.
-- [ ] **Task 2.3: Parser Factory**
+- [x] **Task 2.3: Parser Factory**
     - Create `src/parsers/parserFactory.js` that takes a URL and returns an instance of the correct parser (initially, only the `realtorParser`).
 - [ ] **Task 2.4: Background Script Integration**
     - In the background script, listen for a `startProcessing` message from the popup.
