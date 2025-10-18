@@ -6,6 +6,9 @@
   "scripts": {
     "test": "vitest run"
   },
+  "dependencies": {
+    "@google/genai": "^0.3.0"
+  },
   "devDependencies": {
     "jsdom": "^27.0.0",
     "vitest": "^1.6.0"

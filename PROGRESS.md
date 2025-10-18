@@ -61,7 +61,7 @@ This document breaks down the development of the Chrome extension into a series 
 
 **Goal:** Connect to external services to translate content and handle WeChat authentication.
 
-- [ ] **Task 3.1: Gemini Service**
+- [x] **Task 3.1: Gemini Service**
     - Create `src/services/geminiService.js`.
     - Implement the `translate()` and `generateTitle()` functions.
     - **Reference:** [`docs/gemini_api/gemini_api_usage.md`](./gemini_api/gemini_api_usage.md)
