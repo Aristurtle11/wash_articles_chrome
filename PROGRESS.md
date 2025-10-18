@@ -31,7 +31,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Ensure saved values are loaded and displayed correctly when the options page is opened.
 - [x] **Task 1.3: Shared Settings Module**
     - Create `src/shared/settings.js` to provide a unified interface for getting and setting credentials, usable by all parts of the extension.
-- [ ] **Task 1.4: Popup UI Skeleton**
+- [x] **Task 1.4: Popup UI Skeleton**
     - Create `src/popup/index.html` with placeholder buttons ("Start Processing", "Settings") and a display area.
     - Link the "Settings" button to open the options page.
 

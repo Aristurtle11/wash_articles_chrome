@@ -4,10 +4,73 @@
     <meta charset="UTF-8" />
     <title>WeChat Publisher</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        width: 320px;
+        min-height: 200px;
+        font-family: Arial, sans-serif;
+        background: #f7f7f7;
+        color: #222;
+      }
+
+      main {
+        padding: 16px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+
+      button {
+        flex: 1 1 auto;
+        padding: 8px 12px;
+        font-size: 14px;
+        cursor: pointer;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background-color: #fff;
+      }
+
+      button:hover {
+        background-color: #f0f0f0;
+      }
+
+      .display-area {
+        padding: 12px;
+        min-height: 80px;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+        background-color: #fff;
+      }
+
+      .display-area p {
+        margin: 0;
+        color: #555;
+      }
+    </style>
   </head>
   <body>
-    <main id="app">
-      <p>Popup loaded.</p>
+    <main>
+      <h1>WeChat Publisher</h1>
+      <section class="actions">
+        <button id="startButton" type="button">Start Processing</button>
+        <button id="settingsButton" type="button">Settings</button>
+      </section>
+      <section class="display-area" id="displayArea">
+        <p id="statusText">Status: Idle</p>
+      </section>
     </main>
     <script type="module" src="./popup.js"></script>
   </body>
