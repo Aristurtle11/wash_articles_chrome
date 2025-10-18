@@ -41,7 +41,7 @@ This document breaks down the development of the Chrome extension into a series 
 
 **Goal:** Implement the logic to inject a UI trigger and extract structured content from a target webpage.
 
-- [ ] **Task 2.1: Content Script Injection**
+- [x] **Task 2.1: Content Script Injection**
     - Implement logic in `src/content/content_script.js` to inject a "Start" button into the bottom-right corner of `realtor.com` pages.
     - Clicking the button should open the extension's popup.
 - [ ] **Task 2.2: Realtor.com Parser**
