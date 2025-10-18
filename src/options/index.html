@@ -4,10 +4,136 @@
     <meta charset="UTF-8" />
     <title>Extension Settings</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color: #1f2933;
+        background-color: #f8f9fb;
+      }
+
+      body {
+        margin: 0;
+        padding: 24px;
+      }
+
+      main {
+        max-width: 480px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 8px;
+        padding: 24px;
+        box-shadow: 0 8px 20px rgba(31, 41, 51, 0.08);
+      }
+
+      h1 {
+        margin: 0 0 16px;
+        font-size: 1.5rem;
+      }
+
+      p.description {
+        margin-top: 0;
+        color: #52606d;
+      }
+
+      form {
+        display: grid;
+        gap: 16px;
+      }
+
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      input {
+        width: 100%;
+        padding: 10px 12px;
+        border: 1px solid #d9dde3;
+        border-radius: 6px;
+        font-size: 1rem;
+      }
+
+      input:focus {
+        outline: 2px solid #2563eb;
+        border-color: #2563eb;
+      }
+
+      .form-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      button {
+        padding: 10px 20px;
+        border: none;
+        background: #2563eb;
+        color: #fff;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        background: #9aa5b1;
+        cursor: not-allowed;
+      }
+
+      .status {
+        font-size: 0.95rem;
+        color: #52606d;
+      }
+
+      .status.success {
+        color: #047857;
+      }
+
+      .status.error {
+        color: #c81e1e;
+      }
+    </style>
   </head>
   <body>
-    <main id="settings-root">
-      <p>Options page loaded.</p>
+    <main>
+      <h1>Account Credentials</h1>
+      <p class="description">
+        Store the API credentials required for Gemini and WeChat integrations. Values are saved locally in Chrome.
+      </p>
+
+      <form id="credentials-form">
+        <label for="wechatAppId">WeChat AppID</label>
+        <input
+          id="wechatAppId"
+          name="wechatAppId"
+          type="text"
+          autocomplete="off"
+          placeholder="wx1234567890abcdef"
+        />
+
+        <label for="wechatAppSecret">WeChat AppSecret</label>
+        <input
+          id="wechatAppSecret"
+          name="wechatAppSecret"
+          type="password"
+          autocomplete="off"
+          placeholder="Enter your WeChat AppSecret"
+        />
+
+        <label for="geminiApiKey">Gemini API Key</label>
+        <input
+          id="geminiApiKey"
+          name="geminiApiKey"
+          type="password"
+          autocomplete="off"
+          placeholder="Enter your Gemini API Key"
+        />
+
+        <div class="form-actions">
+          <button type="submit" id="saveButton">Save Credentials</button>
+          <span class="status" id="statusMessage" role="status" aria-live="polite"></span>
+        </div>
+      </form>
     </main>
     <script type="module" src="./options.js"></script>
   </body>

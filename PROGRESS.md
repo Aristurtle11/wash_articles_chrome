@@ -25,7 +25,7 @@ This document breaks down the development of the Chrome extension into a series 
 - [x] **Task 1.1: Basic Extension Scaffolding**
     - Create `manifest.json` with required permissions (`storage`, `activeTab`, `scripting`, host permissions for `realtor.com`).
     - Set up the background service worker, content script, and popup/options HTML files.
-- [ ] **Task 1.2: Options UI**
+- [x] **Task 1.2: Options UI**
     - Create `src/options/index.html` with input fields for WeChat AppID, AppSecret, and Gemini API Key.
     - Implement `src/options/options.js` to save these values to `chrome.storage.local`.
     - Ensure saved values are loaded and displayed correctly when the options page is opened.
