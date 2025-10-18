@@ -1,18 +1,20 @@
 # Incremental Development Plan (PROGRESS.md)
 
-> **Developer Guidance:** Before starting the tasks below, it is crucial to understand both the product vision and the technical architecture.
-> 1.  **First, read the [MVP.md](./MVP.md) document** to understand the core features and user value.
-> 2.  **Next, thoroughly review the [Technical Design Document (TDD.md)](./TDD.md)** for a detailed breakdown of the architecture, data structures, and module contracts you will be implementing.
+> ### **AI Developer Instructions**
 >
-> ### Development Workflow
-> To ensure clarity and a clean version history, please adhere to the following workflow:
-> 1.  **Work on one task at a time.**
-> 2.  **Mark your progress in this file** using the following indicators:
->     - `[ ]` - **To Do:** The task has not been started.
->     - `[>]` - **In Progress:** You are currently working on this task.
->     - `[x]` - **Done:** The task is complete and tested.
-> 3.  **Commit after each completed task.** Once you have marked a task as `[x]`, stage all your changes (`git add .`) and create a commit.
-> 4.  **Use clear commit messages.** The commit message should reference the completed task. For example: `feat(core): Complete Task 1.1 - Basic Extension Scaffolding`.
+> **Your Role:** You are an autonomous AI software developer. Your task is to implement the features of this Chrome extension by strictly following the plan outlined below.
+>
+> **Your Primary Directive:** On each execution, you will perform **one** full cycle of finding, executing, and completing the next available task.
+>
+> **Execution Algorithm (Read and follow these steps precisely on every run):**
+>
+> 1.  **Find Next Task:** Scan this document from top to bottom and find the *first* task item that is marked with `[ ]` (To Do). This is your current task.
+> 2.  **Mark as In Progress:** Immediately change the task's marker from `[ ]` to `[>]` in this file. This prevents re-work on subsequent runs.
+> 3.  **Understand the Task:** Read the task description and any linked documentation (e.g., `TDD.md`, API docs) to fully understand the requirements. The `TDD.md` is your primary technical blueprint.
+> 4.  **Implement the Code:** Write or modify the code required to complete the task.
+> 5.  **Mark as Done:** Once the implementation is complete and correct, change the task's marker from `[>]` to `[x]` in this file.
+> 6.  **Commit Your Work:** Execute `git add .` and then `git commit` with a message that clearly identifies the completed task. Use the format: `feat: Complete Task X.Y - [Task Description]`. For example: `feat(core): Complete Task 1.1 - Basic Extension Scaffolding`.
+> 7.  **Stop:** Your work for this cycle is now complete. The next execution will start the process over from Step 1.
 
 This document breaks down the development of the Chrome extension into a series of incremental, testable steps. Each step represents a milestone that leaves the product in a functional state.
 
