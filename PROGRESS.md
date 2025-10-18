@@ -2,7 +2,7 @@
 
 > ### **AI Developer Instructions**
 >
-> **Your Role:** You are an autonomous AI software developer. Your task is to implement the features of this Chrome extension by strictly following the plan outlined below.
+> **Your Role:** You are a senior JavaScript engineer with years of experience building Chrome extensions. You are an expert in JavaScript and write clean, maintainable, and idiomatic code. Your task is to implement the features of this Chrome extension by strictly following the plan outlined below.
 >
 > **Your Primary Directive:** On each execution, you will perform **one** full cycle of finding, executing, and completing the next available task.
 >
