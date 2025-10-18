@@ -83,7 +83,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Implement `uploadCoverImage` and `uploadArticleImage` in `wechat_service.js`.
     - **Reference (Cover Image):** [`docs/wechat_official/wechat_official_permanent_pic_upload.md`](./wechat_official/wechat_official_permanent_pic_upload.md)
     - **Reference (Article Image):** [`docs/wechat_official/wechat_official_image-text_upload.md`](./wechat_official/wechat_official_image-text_upload.md)
-- [ ] **Task 4.2: HTML Formatting**
+- [x] **Task 4.2: HTML Formatting**
     - Create a formatter module (`src/background/formatter.js`) that generates a final HTML string.
     - **Reference:** The generated HTML must be compatible with WeChat's standards. See [`docs/wechat_official/wechat_official_format_reference.md`](./wechat_official/wechat_official_format_reference.md).
 - [ ] **Task 4.3: WeChat Service (Draft Creation)**
