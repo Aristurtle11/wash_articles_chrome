@@ -50,7 +50,7 @@ This document breaks down the development of the Chrome extension into a series 
     - Convert the extracted data into the standardized `ArticleContent[]` array format. The first image found should be marked with `isCover: true`.
 - [x] **Task 2.3: Parser Factory**
     - Create `src/parsers/parserFactory.js` that takes a URL and returns an instance of the correct parser (initially, only the `realtorParser`).
-- [ ] **Task 2.4: Background Script Integration**
+- [x] **Task 2.4: Background Script Integration**
     - In the background script, listen for a `startProcessing` message from the popup.
     - Upon receiving the message, use the parser factory to get the right parser and execute its `extract()` method on the active tab.
     - For now, `console.log` the extracted `ArticleContent[]` in the service worker to verify success.

@@ -3,8 +3,35 @@ const settingsButton = document.getElementById('settingsButton');
 const statusText = document.getElementById('statusText');
 
 if (startButton && statusText) {
-  startButton.addEventListener('click', () => {
-    statusText.textContent = 'Status: Awaiting workflow implementation...';
+  startButton.addEventListener('click', async () => {
+    statusText.textContent = 'Status: Starting...';
+
+    try {
+      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!activeTab?.id) {
+        throw new Error('Unable to determine the active tab.');
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: 'startProcessing',
+        tabId: activeTab.id,
+      });
+
+      if (response?.ok) {
+        statusText.textContent = 'Status: Extracting content...';
+        return;
+      }
+
+      if (response?.error) {
+        statusText.textContent = `Status: ${response.error}`;
+        return;
+      }
+
+      statusText.textContent = 'Status: Extraction initiated.';
+    } catch (error) {
+      console.error('Failed to start processing', error);
+      statusText.textContent = 'Status: Failed to start.';
+    }
   });
 }
 
